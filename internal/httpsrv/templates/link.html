@@ -1,0 +1,60 @@
+{{define "content"}}
+<section class="head-block">
+  <div class="bigurl">
+    <a href="/r/{{.Link.Code}}" class="bigcode">/r/{{.Link.Code}}</a>
+    {{if .Expired}}<span class="tag red">expired</span>{{end}}
+    {{if .Link.Custom}}<span class="tag">custom</span>{{end}}
+  </div>
+  <p class="target">→ <a href="{{.Link.URL}}" rel="noopener" target="_blank">{{.Link.URL}}</a></p>
+  <div class="actions">
+    <button class="btn copy" data-copy="/r/{{.Link.Code}}">Copy short URL</button>
+    <a class="btn ghost" href="/api/links/{{.Link.Code}}/export.csv">Export CSV</a>
+    <button class="btn danger del" data-code="{{.Link.Code}}">Delete</button>
+  </div>
+</section>
+
+<section class="cards">
+  <div class="card"><div class="k">Clicks 24h</div><div class="v">{{.Stats.Clicks24h}}</div></div>
+  <div class="card"><div class="k">Clicks 7d</div><div class="v">{{.Stats.Clicks7d}}</div></div>
+  <div class="card"><div class="k">Clicks 30d</div><div class="v">{{.Stats.Clicks30d}}</div></div>
+  <div class="card"><div class="k">Total clicks</div><div class="v">{{.Stats.ClicksTotal}}</div></div>
+  <div class="card"><div class="k">Unique IPs</div><div class="v">{{.Stats.UniqueIPs}}</div></div>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Clicks per day (30d)</h2>
+    <canvas data-chart="daily30" width="520" height="240"></canvas>
+    <script type="application/json" data-json="daily30">{{jsonObj .Stats.ChartDaily}}</script>
+  </section>
+  <section class="panel">
+    <h2>Clicks per hour (24h)</h2>
+    <canvas data-chart="hourly24" width="520" height="240"></canvas>
+    <script type="application/json" data-json="hourly24">{{jsonObj .Stats.ChartHourly}}</script>
+  </section>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Top referers (30d)</h2>
+    <table class="tbl"><thead><tr><th>Referer</th><th class="n">Clicks</th></tr></thead><tbody>
+    {{- range .Stats.TopReferers}}<tr><td>{{if .Value}}<a href="{{.Value}}" rel="noopener">{{.Value}}</a>{{else}}<span class="muted">direct</span>{{end}}</td><td class="n">{{.Count}}</td></tr>
+    {{- else}}<tr><td colspan="2" class="empty">no referers yet</td></tr>{{- end}}
+    </tbody></table>
+  </section>
+  <section class="panel">
+    <h2>Recent clicks</h2>
+    <table class="tbl"><thead><tr><th>When</th><th>IP</th><th class="n">Referer</th></tr></thead><tbody>
+    {{- range .Stats.Recent}}<tr><td>{{humanTime .Ts}}</td><td>{{.IP}}</td><td class="refcell">{{.Referer}}</td></tr>
+    {{- else}}<tr><td colspan="3" class="empty">no clicks yet</td></tr>{{- end}}
+    </tbody></table>
+  </section>
+</div>
+
+<section class="panel meta">
+  <div>Created: {{humanTime .Link.CreatedAt}}</div>
+  <div>Expires: {{if .Link.ExpiresAt}}{{humanTime .Link.ExpiresAt}}{{else}}never{{end}}</div>
+  <div>Creator IP: {{.Link.CreatorIP}}</div>
+  <img class="qr" src="/qr/{{.Link.Code}}.png" alt="QR code for /r/{{.Link.Code}}" width="160" height="160">
+</section>
+{{end}}

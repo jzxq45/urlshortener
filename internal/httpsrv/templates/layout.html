@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} — urlshortener</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <nav>
+    <a class="brand" href="/">link<span>shortener</span></a>
+    <a href="/links">Links</a>
+    <a href="/stats">Stats</a>
+  </nav>
+</header>
+<main>
+{{block "content" .}}<p>missing content block</p>{{end}}
+</main>
+<footer class="foot">Go + SQLite · single binary · <a href="/api/links">JSON API</a> · <a href="/metrics">/metrics</a></footer>
+</body>
+</html>

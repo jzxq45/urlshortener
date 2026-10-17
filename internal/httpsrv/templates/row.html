@@ -1,0 +1,7 @@
+{{define "row"}}<tr>
+  <td><a class="code" href="/{{.Code}}">{{.Code}}</a></td>
+  <td class="urlcell"><a href="{{.URL}}" rel="noopener" target="_blank">{{.URL}}</a></td>
+  <td class="n">{{.Clicks}}</td>
+  <td>{{humanTime .CreatedAt}}</td>
+  <td class="act"><button class="mini copy" data-copy="/r/{{.Code}}">copy</button> <button class="mini del" data-code="{{.Code}}">del</button></td>
+</tr>{{end}}

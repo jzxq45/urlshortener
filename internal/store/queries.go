@@ -253,6 +253,11 @@ func (s *Store) ClicksForExport(ctx context.Context, code string) ([]ClickRow, e
 	return out, rows.Err()
 }
 
+// ClicksCountGlobal counts clicks across all links since a timestamp.
+func (s *Store) ClicksCountGlobal(ctx context.Context, since time.Time) (int64, error) {
+	return count(ctx, s.ro, `SELECT count(*) FROM clicks WHERE ts >= ?`, unix(since))
+}
+
 // RetentionDeleteClicks removes clicks older than the cutoff and returns how
 // many rows were removed.
 func (s *Store) RetentionDeleteClicks(ctx context.Context, cutoff time.Time) (int64, error) {

@@ -3,6 +3,7 @@ package httpsrv
 
 import (
 	"context"
+	"html/template"
 	"log/slog"
 	"net/http"
 	"time"
@@ -22,6 +23,7 @@ type Server struct {
 	m       *metrics.Registry
 	limiter *tokenLimiter
 	clicks  chan clickRec
+	pages   map[string]*template.Template
 }
 
 // clickRec is one queued redirect event.
@@ -35,7 +37,7 @@ type clickRec struct {
 
 // New builds the Server with an in-memory click queue for async inserts.
 func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.Logger, m *metrics.Registry) *Server {
-	return &Server{
+	s := &Server{
 		cfg:     cfg,
 		st:      st,
 		sh:      sh,
@@ -44,6 +46,14 @@ func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.
 		limiter: newTokenLimiter(cfg.RateLimitPerMin),
 		clicks:  make(chan clickRec, 512),
 	}
+	if sets, err := buildPages(); err != nil {
+		// templates are static assets; a broken build must be loud but not
+		// panic (per project rules)
+		log.Error("template parse failed", "err", err)
+	} else {
+		s.pages = sets
+	}
+	return s
 }
 
 // Handler returns the fully wrapped router.
@@ -57,11 +67,28 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/links/{code}", s.handleDeleteLink)
 	mux.HandleFunc("GET /r/{code}", s.handleRedirect)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("urlshortener\n"))
+	mux.HandleFunc("GET /r/{code}", s.handleRedirect)
+	mux.HandleFunc("GET /metrics", s.handleMetrics)
+
+	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /links", s.handleLinksPage)
+	mux.HandleFunc("GET /stats", s.handleStatsPage)
+	mux.HandleFunc("GET /{code}", s.handleLinkPage)
+	mux.Handle("GET /static/", http.FileServerFS(staticFS))
+	mux.HandleFunc("GET /favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/static/favicon.svg", http.StatusTemporaryRedirect)
 	})
 
 	return s.middlewares(mux)
+}
+
+// linkJSONs converts a page of links for templates.
+func (s *Server) linkJSONs(links []store.Link) []linkJSON {
+	out := make([]linkJSON, 0, len(links))
+	for _, l := range links {
+		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL))
+	}
+	return out
 }
 
 // Workers drains the click queue until ctx is done, inserting clicks and

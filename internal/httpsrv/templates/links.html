@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="pagenav">
+  <h1>All links</h1>
+  <div class="pager">
+    {{if .HasPrev}}<a class="btn ghost" href="{{with .PageURL}} {{end}}{{call .PageURL (sub .Page 1)}}">← Prev</a>{{else}}<span class="btn ghost off">← Prev</span>{{end}}
+    <span>page {{.Page}} / {{.Pages}}</span>
+    {{if .HasNext}}<a class="btn ghost" href="{{call .PageURL (add .Page 1)}}">Next →</a>{{else}}<span class="btn ghost off">Next →</span>{{end}}
+  </div>
+</div>
+
+<section class="panel">
+  <table class="tbl">
+    <thead><tr><th>Code</th><th>Target</th><th class="n">Clicks</th><th>Created</th><th>Expires</th><th class="act">Actions</th></tr></thead>
+    <tbody>
+    {{- range .Links}}
+      <tr>
+        <td><a class="code" href="/{{.Code}}">{{.Code}}</a></td>
+        <td class="urlcell"><a href="{{.URL}}" rel="noopener" target="_blank">{{.URL}}</a></td>
+        <td class="n">{{.Clicks}}</td>
+        <td>{{humanTime .CreatedAt}}</td>
+        <td>{{if .ExpiresAt}}{{humanTime .ExpiresAt}}{{else}}—{{end}}</td>
+        <td class="act"><button class="mini copy" data-copy="/r/{{.Code}}">copy</button> <button class="mini del" data-code="{{.Code}}">del</button></td>
+      </tr>
+    {{- else}}<tr><td colspan="6" class="empty">nothing here yet</td></tr>{{- end}}
+    </tbody>
+  </table>
+</section>
+{{end}}

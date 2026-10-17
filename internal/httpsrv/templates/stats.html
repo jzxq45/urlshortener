@@ -1,0 +1,35 @@
+{{define "content"}}
+<h1>Global stats</h1>
+
+<section class="cards">
+  <div class="card"><div class="k">Total links</div><div class="v">{{.TotalLinks}}</div></div>
+  <div class="card"><div class="k">Active links</div><div class="v">{{.ActiveLinks}}</div></div>
+  <div class="card"><div class="k">Total clicks</div><div class="v">{{.TotalClicks}}</div></div>
+  <div class="card"><div class="k">Clicks 24h</div><div class="v">{{.Clicks24h}}</div></div>
+  <div class="card"><div class="k">Clicks 7d</div><div class="v">{{.Clicks7d}}</div></div>
+  <div class="card"><div class="k">Clicks 30d</div><div class="v">{{.Clicks30d}}</div></div>
+</section>
+
+<section class="panel">
+  <h2>Clicks per day (30d)</h2>
+  <canvas data-chart="daily30" width="640" height="240"></canvas>
+  <script type="application/json" data-json="daily30">{{jsonObj .ChartDaily30}}</script>
+</section>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Top referers (30d)</h2>
+    <table class="tbl"><thead><tr><th>Referer</th><th class="n">Clicks</th></tr></thead><tbody>
+    {{- range .TopReferers}}<tr><td>{{if .Value}}<a href="{{.Value}}" rel="noopener">{{.Value}}</a>{{else}}<span class="muted">direct</span>{{end}}</td><td class="n">{{.Count}}</td></tr>
+    {{- else}}<tr><td colspan="2" class="empty">no referers yet</td></tr>{{- end}}
+    </tbody></table>
+  </section>
+  <section class="panel">
+    <h2>Newest links</h2>
+    <table class="tbl"><thead><tr><th>Code</th><th class="n">Clicks</th><th>Created</th></tr></thead><tbody>
+    {{- range .TopLinks}}<tr><td><a class="code" href="/{{.Code}}">{{.Code}}</a></td><td class="n">{{.Clicks}}</td><td>{{humanTime .CreatedAt}}</td></tr>
+    {{- else}}<tr><td colspan="3" class="empty">no links yet</td></tr>{{- end}}
+    </tbody></table>
+  </section>
+</div>
+{{end}}

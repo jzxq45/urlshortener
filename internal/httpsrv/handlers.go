@@ -104,6 +104,11 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.m.Shorten.Inc(map[string]string{"status": "201"})
+	// htmx form: return the row HTML so the table updates without JS glue
+	if r.Header.Get("HX-Request") == "true" {
+		s.renderFragment(w, "row", s.toLinkJSON(l, s.cfg.BaseURL))
+		return
+	}
 	writeJSON(w, http.StatusCreated, s.toLinkJSON(l, s.cfg.BaseURL))
 }
 
