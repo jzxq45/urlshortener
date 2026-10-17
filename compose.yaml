@@ -1,0 +1,16 @@
+services:
+  server:
+    build: .
+    image: urlshortener:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # base_url must match the public address of the deployment
+      SHORTENER_BASE_URL: http://localhost:8080
+      SHORTENER_LISTEN: 0.0.0.0:8080
+    volumes:
+      - dbdata:/data
+
+volumes:
+  dbdata:
