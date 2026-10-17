@@ -46,8 +46,13 @@ func main() {
 	defer stop()
 
 	srv := &http.Server{
-		Handler:           s.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
+		Handler: s.Handler(),
+		// limit how long an attacker can hold a connection open (slowloris);
+		// WriteTimeout must exceed the time analytics queries can take
+		ReadTimeout:    10 * time.Second,
+		WriteTimeout:   15 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 16 * 1024,
 	}
 
 	g, ctx := errgroup.WithContext(appCtx)
