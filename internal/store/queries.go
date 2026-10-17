@@ -231,26 +231,29 @@ func (s *Store) RecentClicks(ctx context.Context, linkID int64, limit int) ([]Cl
 	return out, rows.Err()
 }
 
-// ClicksForExport returns all clicks of a link ordered by time (for CSV).
-func (s *Store) ClicksForExport(ctx context.Context, code string) ([]ClickRow, error) {
+// ClicksForExport streams all clicks of a link (ordered oldest first) into
+// fn one row at a time — no materialized slice, so a huge click history
+// cannot exhaust memory (O(1) RSS regardless of history size).
+func (s *Store) ClicksForExport(ctx context.Context, code string, fn func(ClickRow) error) error {
 	rows, err := s.ro.QueryContext(ctx,
 		`SELECT c.ts, c.ip, c.user_agent, c.referer
 		 FROM clicks c JOIN links l ON l.id = c.link_id WHERE l.code = ? ORDER BY c.ts ASC, c.id ASC`, code)
 	if err != nil {
-		return nil, fmt.Errorf("store: export clicks: %w", err)
+		return fmt.Errorf("store: export clicks: %w", err)
 	}
 	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
-	var out []ClickRow
 	for rows.Next() {
 		var cr ClickRow
 		var ts int64
 		if err := rows.Scan(&ts, &cr.IP, &cr.UserAgent, &cr.Referer); err != nil {
-			return nil, fmt.Errorf("store: scan export click: %w", err)
+			return fmt.Errorf("store: scan export click: %w", err)
 		}
 		cr.Ts = fromUnix(ts)
-		out = append(out, cr)
+		if err := fn(cr); err != nil {
+			return fmt.Errorf("store: export click callback: %w", err)
+		}
 	}
-	return out, rows.Err()
+	return rows.Err()
 }
 
 // ClicksCountGlobal counts clicks across all links since a timestamp.

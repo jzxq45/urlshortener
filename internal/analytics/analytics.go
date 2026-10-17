@@ -56,24 +56,28 @@ func (s *Service) sweep(ctx context.Context) error {
 	return nil
 }
 
-// ExportCSV writes all clicks of one link as CSV rows. The caller resolves
+// ExportCSV streams all clicks of one link as CSV rows; memory stays O(1)
+// because the store hands rows over one at a time. The caller resolves
 // the link so export and auth share the same not-found semantics.
 func (s *Service) ExportCSV(ctx context.Context, code string, w io.Writer) (int, error) {
-	rows, err := s.st.ClicksForExport(ctx, code)
-	if err != nil {
-		return 0, err
-	}
 	cw := csv.NewWriter(w)
 	if err := cw.Write([]string{"ts", "ip", "user_agent", "referer"}); err != nil {
+		cw.Flush()
 		return 0, fmt.Errorf("write csv header: %w", err)
 	}
 	written := 0
-	for _, c := range rows {
-		if err := cw.Write([]string{c.Ts.Format(time.RFC3339), c.IP, c.UserAgent, c.Referer}); err != nil {
-			return written, fmt.Errorf("write csv row: %w", err)
+	err := s.st.ClicksForExport(ctx, code, func(c store.ClickRow) error {
+		// encoding/csv quotes special chars itself, including newlines in UA
+		if wErr := cw.Write([]string{c.Ts.Format(time.RFC3339), c.IP, c.UserAgent, c.Referer}); wErr != nil {
+			return wErr
 		}
 		written++
-	}
+		return nil
+	})
+	// flush unconditionally so partial data reaches the wire even on error
 	cw.Flush()
+	if err != nil {
+		return written, err
+	}
 	return written, cw.Error()
 }
