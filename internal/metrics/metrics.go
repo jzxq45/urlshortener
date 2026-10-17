@@ -125,7 +125,7 @@ func New() *Registry {
 		HTTPRequests: newCounterVec("http_requests_total", "Total HTTP requests processed.", "method", "path", "status"),
 		Shorten:      newCounterVec("shorten_total", "Total /api/shorten outcomes.", "status"),
 		Redirect:     newCounterVec("redirect_total", "Total redirect outcomes.", "status"),
-		Clicks:       newCounterVec("clicks_total", "Total recorded redirect clicks.", ""),
+		Clicks:       newCounterVec("clicks_total", "Total recorded redirect clicks."),
 		ActiveLinks:  &Gauge{name: "active_links", help: "Links that are not expired."},
 		Duration:     newHistogramVec("http_request_duration_seconds", "Handler latency in seconds.", "path"),
 	}
@@ -157,7 +157,8 @@ func writeCounterVec(b *strings.Builder, c *CounterVec) {
 		vals := strings.Split(k, "\x00")
 		var lb []string
 		for i, col := range c.cols {
-			lb = append(lb, fmt.Sprintf("%s=%q", col, labelBytes(vals[i])))
+			// manual quoting: %q would escape the already-escaped value again
+			lb = append(lb, col+`="`+labelBytes(vals[i])+`"`)
 		}
 		label := ""
 		if len(c.cols) > 0 {
@@ -186,7 +187,7 @@ func writeHistogram(b *strings.Builder, h *HistogramVec) {
 	sort.Strings(keys)
 	for _, k := range keys {
 		s := h.series[k]
-		label := fmt.Sprintf("path=%q", labelBytes(k))
+		label := `path="` + labelBytes(k) + `"`
 		for i, bucket := range HistogramBuckets {
 			// counts are cumulative per le bound
 			fmt.Fprintf(b, "%s_bucket{%s,le=%q} %d\n", h.name, label, formatBucket(bucket), s.counts[i])
