@@ -46,8 +46,23 @@ Build gate passes: `go build ./...`, `go vet ./...`, `go test -race -timeout 600
 ## Not done / known gaps
 - No tests for `analytics`, `qr` packages (covered indirectly via handlers).
 - Code generation modulo bias on `%62` (8/256) documented, not rejection-sampled.
-- Lint job (golangci-lint) not configured with a custom `.golangci.yml` — runs default ruleset.
-- CI has not actually run on GitHub (no remote configured in this environment).
+- Lint (golangci-lint v2.15.0) runs with the default ruleset — no custom `.golangci.yml`.
+
+## CI status
+
+Published to https://github.com/jzxq45/urlshortener (branch `main`).
+CI run (with the fixes below) is green end-to-end:
+
+| Job | Steps | Result |
+| --- | --- | --- |
+| test | build, vet, `go test -race`, golangci-lint v2.15.0 | ✅ |
+| docker | multi-stage image build (CGO=0, scratch) + smoke test (`/healthz` under uid 65534 with a named volume) | ✅ |
+
+Fixes made while bringing CI green:
+1. golangci-lint v1 binary (built with Go 1.24) could not parse `go.mod` 1.27.1 → moved to action v7 grammar line `golangci/golangci-lint-action@v8` with pinned `version: v2.15.0`.
+2. Lint findings fixed: unused `Registry.mu`, SA4000 chained-`||` allow calls, ineffassign in rate-limit test, `rows.Close()` error checks (errcheck) in three store queries.
+3. Docker build image was Go 1.25 vs toolchain 1.27.1 → `golang:1.27-alpine`.
+4. Container smoke test revealed `SQLITE_CANTOPEN(14)`: `/data` not writable for uid 65534 → explicit `COPY --chown/--chmod`, smoke and README examples use a named volume (`/data`).
 
 ## How to run
 
