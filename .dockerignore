@@ -5,4 +5,3 @@ bin/
 *.db
 *.db-*
 server.exe
-REPORT.md

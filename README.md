@@ -144,7 +144,6 @@ If you need multi-node writes, keep SQLite per node plus a replication tool, or 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — design and data model
 - [docs/DEPLOY.md](docs/DEPLOY.md) — deployment and operations
 - [CONTRIBUTING.md](CONTRIBUTING.md) — development setup and style
-- [REPORT.md](REPORT.md) — build log of the project
 
 ## License
 
