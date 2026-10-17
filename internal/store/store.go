@@ -74,10 +74,15 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// fileDSN builds a file: URI with the given pragma query. Forward slashes so
-// the URI parser is happy on Windows too.
+// fileDSN builds a file:/// URI (three slashes — sqlite treats "file:C:/..."
+// as authority "C") with the given pragma query. Forward slashes so the URI
+// parser is happy on Windows too.
 func fileDSN(path, query string) string {
-	u := url.URL{Scheme: "file", Path: strings.ReplaceAll(path, "\\", "/"), RawQuery: query}
+	u := url.URL{
+		Scheme:   "file",
+		Path:     "/" + strings.ReplaceAll(path, "\\", "/"),
+		RawQuery: query,
+	}
 	return u.String()
 }
 
