@@ -7,11 +7,13 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server ./cmd/server \
+    && mkdir -p /out/data && chmod 0777 /out/data
 
 # runtime: no shell, no packages — smallest surface the server needs
 FROM scratch
 COPY --from=build /out/server /server
+COPY --from=build /out/data /data
 # /r/ redirects and static assets are embedded; only the db file lives here
 VOLUME ["/data"]
 
