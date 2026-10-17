@@ -14,6 +14,9 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"urlshortener/internal/config"
+	"urlshortener/internal/httpsrv"
+	"urlshortener/internal/metrics"
+	"urlshortener/internal/shortener"
 	"urlshortener/internal/store"
 )
 
@@ -36,17 +39,14 @@ func main() {
 	}
 	defer func() { _ = db.Close() }()
 
+	m := metrics.New()
+	s := httpsrv.New(cfg, db, shortener.New(db), logger, m)
+
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	})
-
 	srv := &http.Server{
-		Handler:           mux,
+		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -60,6 +60,11 @@ func main() {
 		if err := srv.Serve(ln); err != nil && err != http.ErrServerClosed {
 			return err
 		}
+		return nil
+	})
+	// async click saver in its own goroutine; graceful cap see Workers()
+	g.Go(func() error {
+		s.Workers(ctx)
 		return nil
 	})
 	g.Go(func() error {
