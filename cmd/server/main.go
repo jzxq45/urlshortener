@@ -67,6 +67,10 @@ func main() {
 		s.Workers(ctx)
 		return nil
 	})
+	// daily click retention sweep (config: retention_days)
+	g.Go(func() error {
+		return s.RetentionLoop(ctx)
+	})
 	g.Go(func() error {
 		<-ctx.Done()
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
