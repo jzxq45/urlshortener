@@ -8,9 +8,9 @@ import (
 // tokenLimiter is a per-key token bucket with continuous refill. Buckets are
 // pruned lazily on access so no janitor goroutine survives shutdown.
 type tokenLimiter struct {
-	capacity int           // == per-minute allowance
-	rate     float64       // tokens per second
-	mu       sync.Mutex    // serializes bucket map access
+	capacity int        // == per-minute allowance
+	rate     float64    // tokens per second
+	mu       sync.Mutex // serializes bucket map access
 	buckets  map[string]*tbucket
 	prunedAt time.Time
 }

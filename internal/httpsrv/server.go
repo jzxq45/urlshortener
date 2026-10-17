@@ -11,6 +11,7 @@ import (
 	"urlshortener/internal/analytics"
 	"urlshortener/internal/config"
 	"urlshortener/internal/metrics"
+	"urlshortener/internal/qr"
 	"urlshortener/internal/shortener"
 	"urlshortener/internal/store"
 )
@@ -26,6 +27,7 @@ type Server struct {
 	clicks  chan clickRec
 	pages   map[string]*template.Template
 	an      *analytics.Service
+	qr      *qr.Renderer
 }
 
 // clickRec is one queued redirect event.
@@ -56,6 +58,7 @@ func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.
 		s.pages = sets
 	}
 	s.an = analytics.New(st, time.Duration(cfg.RetentionDays)*24*time.Hour, log)
+	s.qr = qr.New(cfg.BaseURL)
 	return s
 }
 
@@ -70,11 +73,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/links/{code}", s.handleDeleteLink)
 	mux.HandleFunc("GET /r/{code}", s.handleRedirect)
 	mux.HandleFunc("GET /metrics", s.handleMetrics)
-	mux.HandleFunc("GET /r/{code}", s.handleRedirect)
-	mux.HandleFunc("GET /metrics", s.handleMetrics)
 
 	mux.HandleFunc("GET /api/links/{code}/stats", s.handleLinkStats)
 	mux.HandleFunc("GET /api/links/{code}/export.csv", s.handleExportCSV)
+	mux.HandleFunc("GET /qr/{code}.png", s.handleQR)
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /links", s.handleLinksPage)

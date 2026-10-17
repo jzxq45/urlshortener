@@ -13,9 +13,9 @@ import (
 
 // shortenReq is POST /api/shorten input.
 type shortenReq struct {
-	URL         string `json:"url"`
-	CustomCode  string `json:"custom_code"`
-	TTLSeconds  int64  `json:"ttl_seconds"`
+	URL        string `json:"url"`
+	CustomCode string `json:"custom_code"`
+	TTLSeconds int64  `json:"ttl_seconds"`
 }
 
 // linkJSON is the API link representation.

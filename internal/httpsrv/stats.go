@@ -17,13 +17,13 @@ func (s *Server) RetentionLoop(ctx context.Context) error {
 
 // apiStats is GET /api/links/{code}/stats response.
 type apiStats struct {
-	Code        string           `json:"code"`
-	TotalClicks int64            `json:"total_clicks"`
-	UniqueIPs   int64            `json:"unique_ips"`
-	Windows     map[string]int64 `json:"windows"` // clicks per time window
-	TopReferers []store.RefCount `json:"top_referers"`
-	Recent      []store.ClickRow `json:"recent"`
-	Daily30     []store.DayCount `json:"daily_30d"`
+	Code        string            `json:"code"`
+	TotalClicks int64             `json:"total_clicks"`
+	UniqueIPs   int64             `json:"unique_ips"`
+	Windows     map[string]int64  `json:"windows"` // clicks per time window
+	TopReferers []store.RefCount  `json:"top_referers"`
+	Recent      []store.ClickRow  `json:"recent"`
+	Daily30     []store.DayCount  `json:"daily_30d"`
 	Hourly24    []store.HourCount `json:"hourly_24h"`
 }
 
@@ -107,4 +107,35 @@ func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 		// headers are sent; log only
 		s.log.Error("export failed", "err", err)
 	}
+}
+
+// handleQR answers GET /qr/{code}.png with a cached QR PNG of the short URL;
+// 404 for unknown or expired links.
+func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
+	code := r.PathValue("code")
+	l, err := s.st.GetLink(r.Context(), code)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeErr(w, http.StatusNotFound, "link not found")
+			return
+		}
+		s.log.Error("qr lookup failed", "err", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if l.Expired(time.Now()) {
+		writeErr(w, http.StatusGone, "link expired")
+		return
+	}
+	png, err := s.qr.PNG(code)
+	if err != nil {
+		s.log.Error("qr render failed", "err", err)
+		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	// immutable while the code exists; TTL in the cache covers content changes
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(png)
 }

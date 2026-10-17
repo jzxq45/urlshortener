@@ -347,7 +347,7 @@ func count(ctx context.Context, db *sql.DB, query string, args ...any) (int64, e
 	return n, nil
 }
 
-func unix(t time.Time) int64  { return t.UTC().Unix() }
+func unix(t time.Time) int64     { return t.UTC().Unix() }
 func fromUnix(u int64) time.Time { return time.Unix(u, 0).UTC() }
 
 func unixPtr(t *time.Time) any {
