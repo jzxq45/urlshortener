@@ -25,7 +25,7 @@
     {{- range .Links}}
       <tr>
         <td><a class="code" href="/{{.Code}}">{{.Code}}</a></td>
-        <td class="urlcell"><a href="{{.URL}}" rel="noopener" target="_blank">{{.URL}}</a></td>
+        <td class="urlcell"><a href="{{.URL}}" rel="noopener noreferrer" target="_blank">{{.URL}}</a></td>
         <td class="n">{{.Clicks}}</td>
         <td>{{humanTime .CreatedAt}}</td>
         <td class="act">

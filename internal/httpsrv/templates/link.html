@@ -5,7 +5,7 @@
     {{if .Expired}}<span class="tag red">expired</span>{{end}}
     {{if .Link.Custom}}<span class="tag">custom</span>{{end}}
   </div>
-  <p class="target">→ <a href="{{.Link.URL}}" rel="noopener" target="_blank">{{.Link.URL}}</a></p>
+  <p class="target">→ <a href="{{.Link.URL}}" rel="noopener noreferrer" target="_blank">{{.Link.URL}}</a></p>
   <div class="actions">
     <button class="btn copy" data-copy="/r/{{.Link.Code}}">Copy short URL</button>
     <a class="btn ghost" href="/api/links/{{.Link.Code}}/export.csv">Export CSV</a>
