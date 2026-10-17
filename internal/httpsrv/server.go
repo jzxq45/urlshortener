@@ -76,7 +76,9 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/links/{code}/stats", s.handleLinkStats)
 	mux.HandleFunc("GET /api/links/{code}/export.csv", s.handleExportCSV)
-	mux.HandleFunc("GET /qr/{code}.png", s.handleQR)
+	// dot suffix after a wildcard panics ServeMux registration, so the .png
+	// suffix is matched here instead
+	mux.HandleFunc("GET /qr/{code}", s.handleQR)
 
 	mux.HandleFunc("GET /{$}", s.handleIndex)
 	mux.HandleFunc("GET /links", s.handleLinksPage)

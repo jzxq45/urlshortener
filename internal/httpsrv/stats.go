@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"urlshortener/internal/store"
@@ -112,7 +113,7 @@ func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 // handleQR answers GET /qr/{code}.png with a cached QR PNG of the short URL;
 // 404 for unknown or expired links.
 func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
+	code := strings.TrimSuffix(r.PathValue("code"), ".png")
 	l, err := s.st.GetLink(r.Context(), code)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {

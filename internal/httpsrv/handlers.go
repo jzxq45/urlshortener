@@ -88,13 +88,15 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 		CreatorIP:  clientIP(r),
 	})
 	switch {
-	case errors.Is(err, shortener.ErrValidation):
-		s.m.Shorten.Inc(map[string]string{"status": "400"})
-		writeErr(w, http.StatusBadRequest, err.Error())
-		return
+	// custom-code duplicates wrap ErrValidation too, so the conflict must be
+	// checked first to keep 409 semantics
 	case errors.Is(err, shortener.ErrCodeExists):
 		s.m.Shorten.Inc(map[string]string{"status": "409"})
 		writeErr(w, http.StatusConflict, "custom code already in use")
+		return
+	case errors.Is(err, shortener.ErrValidation):
+		s.m.Shorten.Inc(map[string]string{"status": "400"})
+		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:
 		s.m.Shorten.Inc(map[string]string{"status": "500"})
