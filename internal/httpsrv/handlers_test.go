@@ -159,17 +159,21 @@ func TestShortenAndRedirectFlow(t *testing.T) {
 		t.Errorf("Location = %q", resp.Header.Get("Location"))
 	}
 
-	// the click lands through the async queue: let one Workers pass process
-	// it, then stop it
+	// the click lands through the async queue: run the worker and poll the
+	// store until the click shows up (deterministic, no time.Sleep)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
 		s.Workers(ctx)
 		close(done)
 	}()
-	time.Sleep(100 * time.Millisecond) // let the insert complete on a live ctx
-	cancel()
-	<-done
+	t.Cleanup(func() { cancel(); <-done })
+	if err := eventually(t, func() bool {
+		l, e := s.st.GetLink(context.Background(), code)
+		return e == nil && l.Clicks == 1
+	}); err != nil {
+		t.Fatalf("click not stored: %v", err)
+	}
 
 	resp, raw := do(t, s, "GET", "/api/links/"+code, nil, nil)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"clicks":1`) {
