@@ -102,9 +102,13 @@ func (s *Server) linkJSONs(links []store.Link) []linkJSON {
 }
 
 // Workers drains the click queue until ctx is done, inserting clicks and
-// bumping the link counter. On shutdown it drains non-blocking first so the
-// redirect path never blocks on a closed DB.
+// bumping the link counter. Inserts run with a detached context (WithoutCancel)
+// so a race between taking an event from the queue and ctx cancellation cannot
+// silently drop a click; on shutdown the loop drains non-blocking.
 func (s *Server) Workers(ctx context.Context) {
+	// the queue is the ownership boundary: once an event is taken it must
+	// reach the DB regardless of loop ctx state
+	dbCtx := context.WithoutCancel(ctx)
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,13 +116,13 @@ func (s *Server) Workers(ctx context.Context) {
 				select {
 				case c := <-s.clicks:
 					// detached: DB close happens after errgroup.Wait()
-					s.saveClick(context.Background(), c)
+					s.saveClick(dbCtx, c)
 				default:
 					return
 				}
 			}
 		case c := <-s.clicks:
-			s.saveClick(ctx, c)
+			s.saveClick(dbCtx, c)
 		}
 	}
 }

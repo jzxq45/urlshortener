@@ -62,23 +62,27 @@ func main() {
 		}
 		return nil
 	})
-	// async click saver in its own goroutine; graceful cap see Workers()
+	// click worker gets its own ctx: it must keep draining while the HTTP
+	// server is still shutting down (in-flight redirects still enqueue)
+	workersCtx, workersCancel := context.WithCancel(ctx)
 	g.Go(func() error {
-		s.Workers(ctx)
+		s.Workers(workersCtx)
 		return nil
 	})
 	// daily click retention sweep (config: retention_days)
 	g.Go(func() error {
 		return s.RetentionLoop(ctx)
 	})
+	// shutdown order matters: first stop accepting requests, then let the
+	// click worker drain its queue, store is closed by main's defer
 	g.Go(func() error {
 		<-ctx.Done()
 		stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := srv.Shutdown(stopCtx); err != nil {
-			return err
-		}
-		return nil
+		err := srv.Shutdown(stopCtx)
+		// stop the worker only after Shutdown drained in-flight requests
+		workersCancel()
+		return err
 	})
 
 	if err := g.Wait(); err != nil {

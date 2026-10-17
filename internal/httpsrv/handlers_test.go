@@ -104,6 +104,56 @@ func TestShortenAndRedirectFlow(t *testing.T) {
 	}
 }
 
+func TestWorkersSavesClickAfterCtxCancel(t *testing.T) {
+	// regression: worker must not drop an enqueued click when ctx is already
+	// canceled (graceful-shutdown drain path)
+	t.Parallel()
+	s := newTestServer(t, 100)
+	code := "wtesttst"
+	if err := s.st.CreateLink(context.Background(), &store.Link{Code: code, URL: "https://example.com", CreatedAt: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	queueEvent := func() {
+		req := httptest.NewRequest("GET", "/r/"+code, nil)
+		s.enqueueClick(req, 1)
+	}
+	queueEvent()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // nothing readable after this point: the drain branch only survives
+	done := make(chan struct{})
+	go func() { s.Workers(ctx); close(done) }()
+	<-done
+
+	var got store.Link
+	if err := eventually(t, func() bool {
+		var e error
+		got, e = s.st.GetLink(context.Background(), code)
+		return e == nil && got.Clicks == 1
+	}); err != nil {
+		t.Fatalf("click lost after cancel: err=%v link=%+v", err, got)
+	}
+}
+
+// eventually polls cond in fixed intervals for 5s — a deterministic stand-in
+// for testify's require.Eventually (dependency banned by project rules).
+func eventually(t *testing.T, cond func() bool) error {
+	t.Helper()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.After(5 * time.Second)
+	for {
+		if cond() {
+			return nil
+		}
+		select {
+		case <-deadline:
+			return fmt.Errorf("condition not met within 5s")
+		case <-ticker.C:
+		}
+	}
+}
+
 func TestShortenValidation(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, 100)
