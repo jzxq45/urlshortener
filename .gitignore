@@ -1,9 +1,30 @@
-urlshortener.db*
-*.db
-bin/
-dist/
+# binaries
 *.exe
-*.out
-coverage.*
-.idea/
+*.exe~
+/bin/
+/dist/
+
+# databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# logs
+*.log
+
+# environment / local config
+.env
+.env.*
+config.local.yaml
+
+# IDE
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
