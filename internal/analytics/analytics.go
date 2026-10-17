@@ -27,9 +27,12 @@ func New(st *store.Store, retention time.Duration, log *slog.Logger) *Service {
 
 // Start runs the retention sweep immediately and then once a day until ctx
 // is done; it returns after ctx cancellation (usable in an errgroup).
+// Sweep errors are logged and retried: a transient SQLITE_BUSY or a locked
+// database must not take down the whole server (it only runs on the bg path).
 func (s *Service) Start(ctx context.Context) error {
 	if err := s.sweep(ctx); err != nil {
-		return err
+		// only ctx cancellation is "normal" here
+		s.log.Error("retention sweep failed", "err", err)
 	}
 	t := time.NewTicker(24 * time.Hour)
 	defer t.Stop()
@@ -39,7 +42,7 @@ func (s *Service) Start(ctx context.Context) error {
 			return nil
 		case <-t.C:
 			if err := s.sweep(ctx); err != nil {
-				return err
+				s.log.Error("retention sweep failed", "err", err)
 			}
 		}
 	}
