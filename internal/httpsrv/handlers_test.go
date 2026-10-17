@@ -430,6 +430,29 @@ func TestCorsSameOrigin(t *testing.T) {
 	}
 }
 
+func TestHtmxErrorFragment(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, 100)
+
+	// validation failure through an htmx form: fragment, not JSON; the
+	// error text echoes the user-supplied scheme, so escaping is on display
+	resp, raw := do(t, s, "POST", "/api/shorten", strings.NewReader(`{"url":"<script>://x"}`),
+		map[string]string{"HX-Request": "true"})
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("htmx error status = %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.Contains(ct, "text/html") {
+		t.Errorf("content type = %q, want text/html", ct)
+	}
+	if !strings.Contains(string(raw), "<tr>") || !strings.Contains(string(raw), "invalid input") {
+		t.Errorf("fragment missing error row: %s", raw)
+	}
+	// the message must be HTML-escaped, not raw user input
+	if !strings.Contains(string(raw), "&lt;script&gt;") {
+		t.Errorf("error text not escaped: %s", raw)
+	}
+}
+
 func TestHtmxFragmentResponse(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, 100)

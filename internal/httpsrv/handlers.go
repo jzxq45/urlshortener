@@ -66,7 +66,7 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	if !s.limiter.Allow(clientIP(r)) {
 		s.m.Shorten.Inc(map[string]string{"status": "429"})
 		w.Header().Set("Retry-After", "60")
-		writeErr(w, http.StatusTooManyRequests, "rate limit exceeded, try later")
+		writeErrEither(w, r, http.StatusTooManyRequests, "rate limit exceeded, try later")
 		return
 	}
 
@@ -76,7 +76,7 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	var req shortenReq
 	if err := dec.Decode(&req); err != nil {
 		s.m.Shorten.Inc(map[string]string{"status": "400"})
-		writeErr(w, http.StatusBadRequest, "invalid json body: "+err.Error())
+		writeErrEither(w, r, http.StatusBadRequest, "invalid json body: "+err.Error())
 		return
 	}
 
@@ -84,13 +84,13 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	if req.TTLSeconds != 0 {
 		if req.TTLSeconds < 0 {
 			s.m.Shorten.Inc(map[string]string{"status": "400"})
-			writeErr(w, http.StatusBadRequest, "ttl_seconds must be positive or 0")
+			writeErrEither(w, r, http.StatusBadRequest, "ttl_seconds must be positive or 0")
 			return
 		}
 		// cap TTL at 10y to keep expires_at arithmetic safe
 		if req.TTLSeconds > 10*366*24*3600 {
 			s.m.Shorten.Inc(map[string]string{"status": "400"})
-			writeErr(w, http.StatusBadRequest, "ttl_seconds too large")
+			writeErrEither(w, r, http.StatusBadRequest, "ttl_seconds too large")
 			return
 		}
 		d := time.Duration(req.TTLSeconds) * time.Second
@@ -109,16 +109,16 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	// checked first to keep 409 semantics
 	case errors.Is(err, shortener.ErrCodeExists):
 		s.m.Shorten.Inc(map[string]string{"status": "409"})
-		writeErr(w, http.StatusConflict, "custom code already in use")
+		writeErrEither(w, r, http.StatusConflict, "custom code already in use")
 		return
 	case errors.Is(err, shortener.ErrValidation):
 		s.m.Shorten.Inc(map[string]string{"status": "400"})
-		writeErr(w, http.StatusBadRequest, err.Error())
+		writeErrEither(w, r, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:
 		s.m.Shorten.Inc(map[string]string{"status": "500"})
 		s.log.Error("shorten failed", "err", err)
-		writeErr(w, http.StatusInternalServerError, "internal error")
+		writeErrEither(w, r, http.StatusInternalServerError, "internal error")
 		return
 	}
 
