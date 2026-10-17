@@ -42,7 +42,9 @@ type linkJSON struct {
 	Custom    bool       `json:"custom_code"`
 }
 
-func (s *Server) toLinkJSON(l store.Link, baseURL, requesterIP string) linkJSON {
+// toLinkJSON converts a link for API/pages. `now` is passed in so a listing
+// evaluates one clock read instead of one per row.
+func (s *Server) toLinkJSON(l store.Link, baseURL, requesterIP string, now time.Time) linkJSON {
 	// PII: the creator's full IP is visible only to that creator
 	ip := "hidden"
 	if l.CreatorIP != "" && l.CreatorIP == requesterIP {
@@ -54,7 +56,7 @@ func (s *Server) toLinkJSON(l store.Link, baseURL, requesterIP string) linkJSON 
 		ShortURL:  baseURL + "/r/" + l.Code,
 		CreatedAt: l.CreatedAt,
 		ExpiresAt: l.ExpiresAt,
-		Expired:   l.Expired(time.Now()),
+		Expired:   l.Expired(now),
 		Clicks:    l.Clicks,
 		CreatorIP: ip,
 		Custom:    l.CustomCode,
@@ -123,12 +125,13 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.m.Shorten.Inc(map[string]string{"status": "201"})
+	now := time.Now()
 	// htmx form: return the row HTML so the table updates without JS glue
 	if r.Header.Get("HX-Request") == "true" {
-		s.renderFragment(w, "row", s.toLinkJSON(l, s.cfg.BaseURL, requesterIP))
+		s.renderFragment(w, "row", s.toLinkJSON(l, s.cfg.BaseURL, requesterIP, now))
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.toLinkJSON(l, s.cfg.BaseURL, requesterIP))
+	writeJSON(w, http.StatusCreated, s.toLinkJSON(l, s.cfg.BaseURL, requesterIP, now))
 }
 
 // handleListLinks answers GET /api/links?limit=&offset= (200).
@@ -149,9 +152,10 @@ func (s *Server) handleListLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := make([]linkJSON, 0, len(items))
+	now := time.Now()
 	for _, l := range items {
 		// /api/links is a public listing: no IP is ever the viewer's own here
-		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, ""))
+		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, "", now))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": out, "total": total, "limit": limit, "offset": offset,
@@ -170,7 +174,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r)))
+	writeJSON(w, http.StatusOK, s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r), time.Now()))
 }
 
 // handleDeleteLink allows only the link's creator IP to delete (204/403/404).

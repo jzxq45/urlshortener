@@ -39,7 +39,11 @@ func newTestServer(t *testing.T, ratePerMin int) *Server {
 		t.Fatalf("store open: %v", err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	return New(cfg, db, shortener.New(db), slog.New(slog.NewTextHandler(os.Stderr, nil)), metrics.New())
+	s, err := New(cfg, db, shortener.New(db), slog.New(slog.NewTextHandler(os.Stderr, nil)), metrics.New())
+	if err != nil {
+		t.Fatalf("server build: %v", err)
+	}
+	return s
 }
 
 // do executes one request against the server's full middleware chain.
@@ -65,6 +69,27 @@ func shorten(t *testing.T, s *Server, body string, headers map[string]string) (*
 	return resp, out
 }
 
+func TestXFFRightmostWins(t *testing.T) {
+	// regression: with a proxy that appends instead of overwrites, a client
+	// can forge the leftmost XFF entries; the rightmost (added by our own
+	// trusted proxy) must win
+	t.Parallel()
+	s := newTestServer(t, 100)
+	resp, out := shorten(t, s, `{"url":"https://example.com"}`,
+		map[string]string{"X-Forwarded-For": "8.8.8.8, 203.0.113.42"})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("shorten = %d", resp.StatusCode)
+	}
+	code, _ := out["code"].(string)
+
+	// the creator identity is the proxy-appended entry, not the forged one
+	resp, raw := do(t, s, "GET", "/api/links/"+code, nil,
+		map[string]string{"X-Forwarded-For": "8.8.8.8, 203.0.113.42"})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"creator_ip":"203.0.113.42"`) {
+		t.Errorf("forged leftmost XFF won: %s", raw)
+	}
+}
+
 func TestUntrustedXFFIsIgnored(t *testing.T) {
 	// regression: a forged X-Forwarded-For must not become the client IP
 	t.Parallel()
@@ -79,7 +104,10 @@ func TestUntrustedXFFIsIgnored(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	s := New(cfg, db, shortener.New(db), slog.New(slog.NewTextHandler(os.Stderr, nil)), metrics.New())
+	s, err := New(cfg, db, shortener.New(db), slog.New(slog.NewTextHandler(os.Stderr, nil)), metrics.New())
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	resp, out := shorten(t, s, `{"url":"https://example.com"}`, map[string]string{"X-Forwarded-For": "8.8.8.8"})
 	if resp.StatusCode != http.StatusCreated {

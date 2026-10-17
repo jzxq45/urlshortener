@@ -72,7 +72,7 @@ func (s *Store) ListLinks(ctx context.Context, limit, offset int) ([]Link, error
 	if err != nil {
 		return nil, fmt.Errorf("store: list links: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	var out []Link
 	for rows.Next() {
 		l, err := scanLink(rows)
@@ -94,9 +94,14 @@ func (s *Store) CountActiveLinks(ctx context.Context, now time.Time) (int64, err
 	return count(ctx, s.ro, `SELECT count(*) FROM links WHERE expires_at IS NULL OR expires_at > ?`, unix(now))
 }
 
+const (
+	sqlInsertClick = `INSERT INTO clicks (link_id, ts, ip, user_agent, referer) VALUES (?, ?, ?, ?, ?)`
+	sqlBumpClicks  = `UPDATE links SET clicks = clicks + 1 WHERE id = ?`
+)
+
 // IncrementClicks bumps the cached counters on the link row.
 func (s *Store) IncrementClicks(ctx context.Context, linkID int64) error {
-	if _, err := s.rw.ExecContext(ctx, `UPDATE links SET clicks = clicks + 1 WHERE id = ?`, linkID); err != nil {
+	if _, err := s.rw.ExecContext(ctx, sqlBumpClicks, linkID); err != nil {
 		return fmt.Errorf("store: increment clicks: %w", err)
 	}
 	return nil
@@ -105,9 +110,30 @@ func (s *Store) IncrementClicks(ctx context.Context, linkID int64) error {
 // InsertClick appends one redirect event.
 func (s *Store) InsertClick(ctx context.Context, c Click) error {
 	if _, err := s.rw.ExecContext(ctx,
-		`INSERT INTO clicks (link_id, ts, ip, user_agent, referer) VALUES (?, ?, ?, ?, ?)`,
-		c.LinkID, unix(c.Ts), c.IP, c.UserAgent, c.Referer); err != nil {
+		sqlInsertClick, c.LinkID, unix(c.Ts), c.IP, c.UserAgent, c.Referer); err != nil {
 		return fmt.Errorf("store: insert click: %w", err)
+	}
+	return nil
+}
+
+// RecordClick writes the click row and bumps the link counter as one
+// transaction: two independent writes can split the difference on a transient
+// error (SQLITE_BUSY) and leave the counter drifting from the real history.
+func (s *Store) RecordClick(ctx context.Context, c Click) error {
+	tx, err := s.rw.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: record click begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
+	if _, err := tx.ExecContext(ctx,
+		sqlInsertClick, c.LinkID, unix(c.Ts), c.IP, c.UserAgent, c.Referer); err != nil {
+		return fmt.Errorf("store: record click insert: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, sqlBumpClicks, c.LinkID); err != nil {
+		return fmt.Errorf("store: record click counter: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: record click commit: %w", err)
 	}
 	return nil
 }
@@ -217,7 +243,7 @@ func (s *Store) RecentClicks(ctx context.Context, linkID int64, limit int) ([]Cl
 	if err != nil {
 		return nil, fmt.Errorf("store: recent clicks: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	var out []ClickRow
 	for rows.Next() {
 		var cr ClickRow
@@ -241,7 +267,7 @@ func (s *Store) ClicksForExport(ctx context.Context, code string, fn func(ClickR
 	if err != nil {
 		return fmt.Errorf("store: export clicks: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	for rows.Next() {
 		var cr ClickRow
 		var ts int64
@@ -298,7 +324,7 @@ func collectRefCounts(ctx context.Context, rows *sql.Rows, err error) ([]RefCoun
 	if err != nil {
 		return nil, fmt.Errorf("store: top referers: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	var out []RefCount
 	for rows.Next() {
 		var rc RefCount
@@ -314,7 +340,7 @@ func collectDayCounts(ctx context.Context, rows *sql.Rows, err error) ([]DayCoun
 	if err != nil {
 		return nil, fmt.Errorf("store: clicks by day: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	var out []DayCount
 	for rows.Next() {
 		var day, c int64
@@ -330,7 +356,7 @@ func collectHourCounts(ctx context.Context, rows *sql.Rows, err error) ([]HourCo
 	if err != nil {
 		return nil, fmt.Errorf("store: clicks by hour: %w", err)
 	}
-	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
+	defer func() { _ = rows.Close() }() // iterative errors surface via rows.Err/Scan; Close itself is release-only
 	var out []HourCount
 	for rows.Next() {
 		var hour, c int64

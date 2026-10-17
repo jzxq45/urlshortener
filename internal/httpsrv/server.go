@@ -3,6 +3,7 @@ package httpsrv
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"log/slog"
 	"net"
@@ -42,7 +43,9 @@ type clickRec struct {
 }
 
 // New builds the Server with an in-memory click queue for async inserts.
-func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.Logger, m *metrics.Registry) *Server {
+// Templates are static assets: a broken parse fails startup instead of
+// silently serving a web UI that returns 500 on every page.
+func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.Logger, m *metrics.Registry) (*Server, error) {
 	s := &Server{
 		cfg:     cfg,
 		st:      st,
@@ -52,17 +55,15 @@ func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.
 		limiter: newTokenLimiter(cfg.RateLimitPerMin),
 		clicks:  make(chan clickRec, 512),
 	}
-	if sets, err := buildPages(); err != nil {
-		// templates are static assets; a broken build must be loud but not
-		// panic (per project rules)
-		log.Error("template parse failed", "err", err)
-	} else {
-		s.pages = sets
+	sets, err := buildPages()
+	if err != nil {
+		return nil, fmt.Errorf("httpsrv: load templates: %w", err)
 	}
+	s.pages = sets
 	s.an = analytics.New(st, time.Duration(cfg.RetentionDays)*24*time.Hour, log)
 	s.qr = qr.New(cfg.BaseURL)
 	s.trusted = parseTrustedProxies(cfg.TrustedProxies)
-	return s
+	return s, nil
 }
 
 // Handler returns the fully wrapped router.
@@ -97,10 +98,11 @@ func (s *Server) Handler() http.Handler {
 
 // linkJSONs converts a page of links for templates.
 func (s *Server) linkJSONs(links []store.Link) []linkJSON {
+	now := time.Now()
 	out := make([]linkJSON, 0, len(links))
 	for _, l := range links {
 		// pages are public: creator IPs must not leak into the HTML
-		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, ""))
+		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, "", now))
 	}
 	return out
 }
@@ -133,17 +135,15 @@ func (s *Server) Workers(ctx context.Context) {
 
 func (s *Server) saveClick(ctx context.Context, c clickRec) {
 	s.m.Clicks.Inc(nil)
-	if err := s.st.InsertClick(ctx, store.Click{
+	// row and counter move together: a half-saved click would desynchronize
+	// link.clicks from the actual clicks history
+	if err := s.st.RecordClick(ctx, store.Click{
 		LinkID:    c.linkID,
 		Ts:        c.ts,
 		IP:        c.ip,
 		UserAgent: c.ua,
 		Referer:   c.referer,
 	}); err != nil {
-		s.log.Error("click insert failed", "err", err)
-		return
-	}
-	if err := s.st.IncrementClicks(ctx, c.linkID); err != nil {
-		s.log.Error("click counter failed", "err", err)
+		s.log.Error("click save failed", "err", err)
 	}
 }

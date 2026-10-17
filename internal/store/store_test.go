@@ -152,6 +152,32 @@ func TestRetentionDelete(t *testing.T) {
 	}
 }
 
+// TestRecordClickAtomic pins the invariant the click saver relies on: the
+// row and the counter bump land together or not at all.
+func TestRecordClickAtomic(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	l := Link{Code: "atom", URL: "https://example.com", CreatedAt: time.Now().UTC()}
+	if err := s.CreateLink(ctx, &l); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := s.RecordClick(ctx, Click{LinkID: l.ID, Ts: time.Now().UTC(), IP: "3.3.3.3"}); err != nil {
+		t.Fatalf("record: %v", err)
+	}
+	got, err := s.GetLink(ctx, "atom")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.Clicks != 1 {
+		t.Errorf("counter = %d, want 1 (row+counter must move together)", got.Clicks)
+	}
+	if n, _ := s.TotalClicksForLink(ctx, l.ID); n != 1 {
+		t.Errorf("rows = %d, want 1", n)
+	}
+}
+
 func TestLinkExpired(t *testing.T) {
 	t.Parallel()
 	now := time.Now()

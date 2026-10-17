@@ -37,10 +37,18 @@ func main() {
 		logger.Error("open db failed", "err", err)
 		os.Exit(1)
 	}
-	defer func() { _ = db.Close() }()
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("db close failed", "err", err)
+		}
+	}()
 
 	m := metrics.New()
-	s := httpsrv.New(cfg, db, shortener.New(db), logger, m)
+	s, err := httpsrv.New(cfg, db, shortener.New(db), logger, m)
+	if err != nil {
+		logger.Error("build http server failed", "err", err)
+		os.Exit(1)
+	}
 
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
