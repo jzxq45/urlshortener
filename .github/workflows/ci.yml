@@ -49,8 +49,9 @@ jobs:
 
       - name: Smoke test container
         run: |
-          # no --rm so the exit reason stays in `docker logs`
-          docker run -d -p 8080:8080 --name smoke urlshortener:ci
+          # named volume, same shape as compose.yaml, so the db persists and
+          # the volume inherits the image /data ownership set in the Dockerfile
+          docker run -d -p 8080:8080 -v smoke-data:/data --name smoke urlshortener:ci
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8080/healthz > /dev/null; then
               echo "healthz ok"

@@ -14,7 +14,10 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/server 
 # runtime: no shell, no packages — smallest surface the server needs
 FROM scratch
 COPY --from=build /out/server /server
-COPY --from=build /out/data /data
+# uid 65534 runs the server; mkdir+chmod in the build stage does not survive
+# the volume bootstrap on all Docker versions, so ownership/mode are re-set
+# here explicitly (SQLITE_CANTOPEN(14) otherwise)
+COPY --from=build --chown=65534:65534 --chmod=0777 /out/data /data
 # /r/ redirects and static assets are embedded; only the db file lives here
 VOLUME ["/data"]
 

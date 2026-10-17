@@ -49,7 +49,8 @@ or build and run the container directly:
 
 ```sh
 docker build -t urlshortener .
-docker run -p 8080:8080 -e SHORTENER_BASE_URL=http://localhost:8080 urlshortener
+docker run -p 8080:8080 -v urlshortener-data:/data \
+  -e SHORTENER_BASE_URL=http://localhost:8080 urlshortener
 ```
 
 > `base_url` must match the public origin of the deployment — it is used to render short URLs and QR codes.
