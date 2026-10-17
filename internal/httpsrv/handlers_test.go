@@ -503,6 +503,23 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
+func TestSecurityHeaders(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, 100)
+	resp, _ := do(t, s, "GET", "/healthz", nil, nil)
+	want := map[string]string{
+		"X-Content-Type-Options":  "nosniff",
+		"X-Frame-Options":         "DENY",
+		"Referrer-Policy":         "strict-origin-when-cross-origin",
+		"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'",
+	}
+	for k, v := range want {
+		if got := resp.Header.Get(k); got != v {
+			t.Errorf("header %s = %q, want %q", k, got, v)
+		}
+	}
+}
+
 func TestHandlerBuilds(t *testing.T) {
 	// why: Go's ServeMux panics on duplicate patterns; this guards the
 	// regression that once broke startup at first request

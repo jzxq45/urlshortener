@@ -23,6 +23,7 @@ const ctxKeyReqLog ctxKey = iota
 // middlewares wraps h with the standard chain, outermost first.
 func (s *Server) middlewares(h http.Handler) http.Handler {
 	for _, mw := range []func(http.Handler) http.Handler{
+		s.secureHeaders,
 		s.recoverPanics,
 		setRequestID(s.log),
 		s.logRequests,
@@ -33,6 +34,24 @@ func (s *Server) middlewares(h http.Handler) http.Handler {
 		h = mw(h)
 	}
 	return h
+}
+
+// secureHeaders stamps baseline protections on every response — first in the
+// chain so even panic/error paths carry them.
+func (s *Server) secureHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		// nosniff: JSON error bodies must never be reinterpreted as HTML
+		h.Set("X-Content-Type-Options", "nosniff")
+		// the UI is not framed anywhere, neither by us nor by attackers
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// conservatively closed CSP: scripts/styles are same-origin only
+		// (htmx + app.js are served from /static)
+		h.Set("Content-Security-Policy",
+			"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // setRequestID assigns a request id and request-scoped logger.
