@@ -1,0 +1,9 @@
+urlshortener.db*
+*.db
+bin/
+dist/
+*.exe
+*.out
+coverage.*
+.idea/
+.vscode/

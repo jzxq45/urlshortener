@@ -1,0 +1,6 @@
+listen: 0.0.0.0:8080
+db_path: urlshortener.db
+base_url: http://localhost:8080
+retention_days: 90
+rate_limit_per_min: 10
+log_level: info
