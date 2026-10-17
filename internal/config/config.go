@@ -98,7 +98,9 @@ func (c *Config) applyEnv() error {
 	if v := os.Getenv("SHORTENER_TRUSTED_PROXIES"); v != "" {
 		// env arrives as a comma-separated list (lists can't ride ENV arrays)
 		parts := strings.Split(v, ",")
-		c.TrustedProxies = c.TrustedProxies[:0]
+		// fresh slice, never reusing Default()'s backing array: a re-parse
+		// into the same config would otherwise leave stale tail entries
+		c.TrustedProxies = make([]string, 0, len(parts))
 		for _, p := range parts {
 			if p = strings.TrimSpace(p); p != "" {
 				c.TrustedProxies = append(c.TrustedProxies, p)

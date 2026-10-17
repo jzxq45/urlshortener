@@ -46,9 +46,11 @@ WantedBy=multi-user.target
 
 ## Behind a proxy
 
-- Reverse-proxy `Host` and `X-Forwarded-For` (leftmost entry is trusted as the
-  client IP for rate limiting, link ownership and analytics). Make sure the
-  proxy overwrites any client-supplied `XFF`.
+- Reverse-proxy `Host` and `X-Forwarded-For` (the **rightmost** XFF entry is
+  trusted as the client IP for rate limiting, link ownership and analytics —
+  it is what your proxy appended, while earlier entries are client-spoofable).
+  One proxy hop: add its IP/CIDR to `trusted_proxies`; unconfigured proxies
+  are ignored and the client IP falls back to the TCP peer.
 - Terminate TLS at the proxy and set `BASE_URL` to the https origin.
 - The UI/redirects don't need sticky sessions; `/r/{code}` sends
   `Cache-Control: no-store`, don't cache it.

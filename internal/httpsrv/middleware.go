@@ -167,6 +167,12 @@ func originMatches(origin, host string) bool {
 // came from a configured trusted proxy; see config.TrustedProxies. Untrusted
 // peers keep their socket address, so header forgery can neither defeat the
 // rate limiter nor fake link ownership.
+//
+// The rightmost entry is used: every proxy appends the address it saw, so the
+// last element is what the nearest trusted proxy observed. Leftmost entries
+// are client-controlled — a client can ship "X-Forwarded-For: 8.8.8.8" behind
+// a proxy that merely appends instead of overwrites, and the leftmost value
+// would hand the attacker a forged identity.
 func (s *Server) realIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		peer := r.RemoteAddr
@@ -175,8 +181,9 @@ func (s *Server) realIP(next http.Handler) http.Handler {
 		}
 		if ipTrusted(peer, s.trusted) {
 			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-				first := strings.TrimSpace(strings.Split(xff, ",")[0])
-				if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
+				parts := strings.Split(xff, ",")
+				last := strings.TrimSpace(parts[len(parts)-1])
+				if ip := net.ParseIP(last); ip != nil {
 					r.RemoteAddr = ip.String()
 				}
 			}
