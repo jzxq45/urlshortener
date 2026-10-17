@@ -49,15 +49,18 @@ jobs:
 
       - name: Smoke test container
         run: |
-          docker run -d --rm -p 8080:8080 --name smoke urlshortener:ci
+          # no --rm so the exit reason stays in `docker logs`
+          docker run -d -p 8080:8080 --name smoke urlshortener:ci
           for i in $(seq 1 30); do
-            if curl -fsS http://localhost:8080/healthz > /dev/null; then
+            if curl -fsS http://127.0.0.1:8080/healthz > /dev/null; then
               echo "healthz ok"
-              docker stop smoke
+              docker rm -f smoke
               exit 0
             fi
             sleep 1
           done
+          echo "container did not become healthy; state + logs:"
+          docker inspect smoke --format 'exit={{.State.ExitCode}} status={{.State.Status}}'
           docker logs smoke
-          docker stop smoke || true
+          docker rm -f smoke || true
           exit 1
