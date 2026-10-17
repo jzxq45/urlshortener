@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sync/errgroup"
 	"urlshortener/internal/config"
+	"urlshortener/internal/store"
 )
 
 func main() {
@@ -27,6 +28,13 @@ func main() {
 	}
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
+
+	db, err := store.Open(cfg.DBPath)
+	if err != nil {
+		logger.Error("open db failed", "err", err)
+		os.Exit(1)
+	}
+	defer func() { _ = db.Close() }()
 
 	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
