@@ -72,7 +72,7 @@ func (s *Store) ListLinks(ctx context.Context, limit, offset int) ([]Link, error
 	if err != nil {
 		return nil, fmt.Errorf("store: list links: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []Link
 	for rows.Next() {
 		l, err := scanLink(rows)
@@ -217,7 +217,7 @@ func (s *Store) RecentClicks(ctx context.Context, linkID int64, limit int) ([]Cl
 	if err != nil {
 		return nil, fmt.Errorf("store: recent clicks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []ClickRow
 	for rows.Next() {
 		var cr ClickRow
@@ -239,7 +239,7 @@ func (s *Store) ClicksForExport(ctx context.Context, code string) ([]ClickRow, e
 	if err != nil {
 		return nil, fmt.Errorf("store: export clicks: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []ClickRow
 	for rows.Next() {
 		var cr ClickRow
@@ -295,7 +295,7 @@ func collectRefCounts(ctx context.Context, rows *sql.Rows, err error) ([]RefCoun
 	if err != nil {
 		return nil, fmt.Errorf("store: top referers: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []RefCount
 	for rows.Next() {
 		var rc RefCount
@@ -311,7 +311,7 @@ func collectDayCounts(ctx context.Context, rows *sql.Rows, err error) ([]DayCoun
 	if err != nil {
 		return nil, fmt.Errorf("store: clicks by day: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []DayCount
 	for rows.Next() {
 		var day, c int64
@@ -327,7 +327,7 @@ func collectHourCounts(ctx context.Context, rows *sql.Rows, err error) ([]HourCo
 	if err != nil {
 		return nil, fmt.Errorf("store: clicks by hour: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }() // errcheck: close() error is meaningless after full iteration
 	var out []HourCount
 	for rows.Next() {
 		var hour, c int64

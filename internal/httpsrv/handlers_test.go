@@ -147,11 +147,11 @@ func TestCustomCodeCollision(t *testing.T) {
 func TestShortenRateLimited(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, 1)
-	resp, out := shorten(t, s, `{"url":"https://a.com"}`, nil)
+	resp, _ := shorten(t, s, `{"url":"https://a.com"}`, nil)
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("first = %d", resp.StatusCode)
 	}
-	resp, out = shorten(t, s, `{"url":"https://b.com"}`, nil)
+	resp, out := shorten(t, s, `{"url":"https://b.com"}`, nil)
 	if resp.StatusCode != http.StatusTooManyRequests {
 		t.Errorf("second = %d, want 429 (%v)", resp.StatusCode, out)
 	}

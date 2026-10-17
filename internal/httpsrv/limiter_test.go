@@ -9,9 +9,16 @@ import (
 func TestTokenLimiterBurstAndRefill(t *testing.T) {
 	t.Parallel()
 	l := newTokenLimiter(3)
-	// fresh key starts full: three passes, then blocked
-	if !l.Allow("a") || !l.Allow("a") || !l.Allow("a") {
-		t.Fatal("burstable allowance consumed")
+	// fresh key starts full: three passes, then blocked (sequential calls —
+	// staticcheck SA4000 flags the chained identical-expression form)
+	if !l.Allow("a") {
+		t.Fatal("first allowance consumed")
+	}
+	if !l.Allow("a") {
+		t.Fatal("second allowance consumed")
+	}
+	if !l.Allow("a") {
+		t.Fatal("third allowance consumed")
 	}
 	if l.Allow("a") {
 		t.Error("4th call should be blocked")

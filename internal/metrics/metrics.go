@@ -109,8 +109,6 @@ func (h *HistogramVec) Observe(label string, v float64) {
 
 // Registry owns the metric set rendered at /metrics.
 type Registry struct {
-	mu sync.Mutex
-
 	HTTPRequests *CounterVec // http_requests_total{method,path,status}
 	Shorten      *CounterVec // shorten_total{status}
 	Redirect     *CounterVec // redirect_total{status}
