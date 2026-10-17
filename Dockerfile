@@ -1,6 +1,7 @@
 # build stage compiles a static binary: modernc.org/sqlite is pure Go, so
 # CGO can be disabled and the final image runs from scratch
-FROM golang:1.25-alpine AS build
+# must be >= the toolchain in go.mod (1.27), see CI note
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
