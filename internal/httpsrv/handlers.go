@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"urlshortener/internal/shortener"
@@ -16,6 +17,16 @@ type shortenReq struct {
 	URL        string `json:"url"`
 	CustomCode string `json:"custom_code"`
 	TTLSeconds int64  `json:"ttl_seconds"`
+}
+
+// maskIP hides the last octet (IPv4) so public pages and APIs never expose
+// full client IPs; only the requester sees their own address unmasked.
+func maskIP(ip string) string {
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		return strings.Join(parts[:3], ".") + ".*"
+	}
+	return "hidden"
 }
 
 // linkJSON is the API link representation.
@@ -31,7 +42,12 @@ type linkJSON struct {
 	Custom    bool       `json:"custom_code"`
 }
 
-func (s *Server) toLinkJSON(l store.Link, baseURL string) linkJSON {
+func (s *Server) toLinkJSON(l store.Link, baseURL, requesterIP string) linkJSON {
+	// PII: the creator's full IP is visible only to that creator
+	ip := "hidden"
+	if l.CreatorIP != "" && l.CreatorIP == requesterIP {
+		ip = l.CreatorIP
+	}
 	return linkJSON{
 		Code:      l.Code,
 		URL:       l.URL,
@@ -40,7 +56,7 @@ func (s *Server) toLinkJSON(l store.Link, baseURL string) linkJSON {
 		ExpiresAt: l.ExpiresAt,
 		Expired:   l.Expired(time.Now()),
 		Clicks:    l.Clicks,
-		CreatorIP: l.CreatorIP,
+		CreatorIP: ip,
 		Custom:    l.CustomCode,
 	}
 }
@@ -81,11 +97,12 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 		ttl = &d
 	}
 
+	requesterIP := clientIP(r)
 	l, err := s.sh.Create(r.Context(), shortener.CreateInput{
 		URL:        req.URL,
 		CustomCode: req.CustomCode,
 		TTL:        ttl,
-		CreatorIP:  clientIP(r),
+		CreatorIP:  requesterIP,
 	})
 	switch {
 	// custom-code duplicates wrap ErrValidation too, so the conflict must be
@@ -108,10 +125,10 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	s.m.Shorten.Inc(map[string]string{"status": "201"})
 	// htmx form: return the row HTML so the table updates without JS glue
 	if r.Header.Get("HX-Request") == "true" {
-		s.renderFragment(w, "row", s.toLinkJSON(l, s.cfg.BaseURL))
+		s.renderFragment(w, "row", s.toLinkJSON(l, s.cfg.BaseURL, requesterIP))
 		return
 	}
-	writeJSON(w, http.StatusCreated, s.toLinkJSON(l, s.cfg.BaseURL))
+	writeJSON(w, http.StatusCreated, s.toLinkJSON(l, s.cfg.BaseURL, requesterIP))
 }
 
 // handleListLinks answers GET /api/links?limit=&offset= (200).
@@ -133,7 +150,8 @@ func (s *Server) handleListLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]linkJSON, 0, len(items))
 	for _, l := range items {
-		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL))
+		// /api/links is a public listing: no IP is ever the viewer's own here
+		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, ""))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items": out, "total": total, "limit": limit, "offset": offset,
@@ -152,7 +170,7 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
 	}
-	writeJSON(w, http.StatusOK, s.toLinkJSON(l, s.cfg.BaseURL))
+	writeJSON(w, http.StatusOK, s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r)))
 }
 
 // handleDeleteLink allows only the link's creator IP to delete (204/403/404).

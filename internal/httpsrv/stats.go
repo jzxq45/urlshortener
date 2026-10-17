@@ -78,6 +78,12 @@ func (s *Server) handleLinkStats(w http.ResponseWriter, r *http.Request) {
 		s.log.Error("stats referers failed", "err", err)
 	}
 	if rec, err := s.st.RecentClicks(ctx, l.ID, 15); err == nil {
+		// PII: same rule as the web page — full IPs only for the creator
+		if clientIP(r) != l.CreatorIP {
+			for i := range rec {
+				rec[i].IP = maskIP(rec[i].IP)
+			}
+		}
 		out.Recent = rec
 	}
 	if daily, err := s.st.ClicksByDay(ctx, l.ID, now.Add(-30*24*time.Hour), now.Add(time.Hour)); err == nil {

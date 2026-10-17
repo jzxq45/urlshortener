@@ -163,20 +163,22 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	stats, err := s.pageStats(r.Context(), l.ID, now)
+	isCreator := clientIP(r) == l.CreatorIP
+	stats, err := s.pageStats(r.Context(), l.ID, now, isCreator)
 	if err != nil {
 		s.log.Error("link page stats failed", "err", err)
 	}
 	s.render(w, "link", http.StatusOK, map[string]any{
 		"Title":   "Link " + l.Code,
-		"Link":    s.toLinkJSON(l, s.cfg.BaseURL),
+		"Link":    s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r)),
 		"Stats":   stats,
 		"Expired": l.Expired(now),
 	})
 }
 
-// pageStats aggregates the windows the details page shows.
-func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time) (linkStats, error) {
+// pageStats aggregates the windows the details page shows. Unless the viewer
+// is the link's creator, recent click IPs are masked (no PII to strangers).
+func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time, isCreator bool) (linkStats, error) {
 	st := s.st
 	out := linkStats{
 		TopReferers: []store.RefCount{},
@@ -205,6 +207,11 @@ func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time) (li
 	}
 	if out.Recent, err = st.RecentClicks(ctx, linkID, 15); err != nil {
 		return out, err
+	}
+	if !isCreator {
+		for i := range out.Recent {
+			out.Recent[i].IP = maskIP(out.Recent[i].IP)
+		}
 	}
 	var daily []store.DayCount
 	if daily, err = st.ClicksByDay(ctx, linkID, now.Add(-30*24*time.Hour), now.Add(time.Hour)); err != nil {

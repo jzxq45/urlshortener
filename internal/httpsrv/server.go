@@ -96,7 +96,8 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) linkJSONs(links []store.Link) []linkJSON {
 	out := make([]linkJSON, 0, len(links))
 	for _, l := range links {
-		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL))
+		// pages are public: creator IPs must not leak into the HTML
+		out = append(out, s.toLinkJSON(l, s.cfg.BaseURL, ""))
 	}
 	return out
 }
