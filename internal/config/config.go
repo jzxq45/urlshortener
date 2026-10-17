@@ -52,14 +52,19 @@ func Load(path string) (Config, error) {
 			return cfg, fmt.Errorf("config: parse %s: %w", path, err)
 		}
 	}
-	cfg.applyEnv()
+	if err := cfg.applyEnv(); err != nil {
+		return cfg, err
+	}
 	if err := cfg.validate(); err != nil {
 		return cfg, err
 	}
 	return cfg, nil
 }
 
-func (c *Config) applyEnv() {
+// applyEnv overlays SHORTENER_* variables. A malformed numeric or proxy-list
+// value is an error: silently falling back to defaults hides misconfiguration
+// (e.g. retention "9O" would silently become 90 days).
+func (c *Config) applyEnv() error {
 	if v := os.Getenv("SHORTENER_LISTEN"); v != "" {
 		c.Listen = v
 	}
@@ -69,15 +74,23 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("SHORTENER_BASE_URL"); v != "" {
 		c.BaseURL = v
 	}
-	if v := os.Getenv("SHORTENER_RETENTION_DAYS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			c.RetentionDays = n
+	applyInt := func(key string, dst *int) error {
+		v := os.Getenv(key)
+		if v == "" {
+			return nil
 		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("config: %s=%q is not a number: %w", key, v, err)
+		}
+		*dst = n
+		return nil
 	}
-	if v := os.Getenv("SHORTENER_RATE_LIMIT_PER_MIN"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			c.RateLimitPerMin = n
-		}
+	if err := applyInt("SHORTENER_RETENTION_DAYS", &c.RetentionDays); err != nil {
+		return err
+	}
+	if err := applyInt("SHORTENER_RATE_LIMIT_PER_MIN", &c.RateLimitPerMin); err != nil {
+		return err
 	}
 	if v := os.Getenv("SHORTENER_LOG_LEVEL"); v != "" {
 		c.LogLevel = v
@@ -92,6 +105,7 @@ func (c *Config) applyEnv() {
 			}
 		}
 	}
+	return nil
 }
 
 func (c Config) validate() error {

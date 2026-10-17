@@ -77,3 +77,16 @@ func TestLoadMissingFileIsError(t *testing.T) {
 		t.Error("missing file must be an error")
 	}
 }
+
+func TestMalformedEnvNumbersReject(t *testing.T) {
+	// not parallel: t.Setenv is disallowed in parallel tests
+	// silent fallback to defaults on typo (e.g. "9O") must not happen
+	t.Setenv("SHORTENER_RETENTION_DAYS", "9O")
+	if _, err := Load(""); err == nil {
+		t.Error("malformed env number must be an error")
+	}
+	t.Setenv("SHORTENER_RATE_LIMIT_PER_MIN", "10; drop table")
+	if _, err := Load(""); err == nil {
+		t.Error("malformed env number must be an error")
+	}
+}
