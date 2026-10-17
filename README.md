@@ -6,7 +6,7 @@
 
 [go-version-badge]: https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white
 [license-badge]: https://img.shields.io/badge/License-MIT-blue
-[build-badge]: https://img.shields.io/github/actions/workflow/status/OWNER/REPO/ci.yml?branch=main&label=CI
+[build-badge]: https://img.shields.io/github/actions/workflow/status/jzxq45/urlshortener/ci.yml?branch=main&label=CI
 
 A high-performance URL shortener with click analytics, QR codes and a web interface — built on the Go standard library with a SQLite backend.
 
