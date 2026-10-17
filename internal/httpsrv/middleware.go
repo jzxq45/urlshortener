@@ -144,17 +144,60 @@ func originMatches(origin, host string) bool {
 	return u.Host == host
 }
 
-// realIP trusts the leftmost X-Forwarded-For entry (see SECURITY.md).
+// realIP rewrites RemoteAddr from X-Forwarded-For, but only when the request
+// came from a configured trusted proxy; see config.TrustedProxies. Untrusted
+// peers keep their socket address, so header forgery can neither defeat the
+// rate limiter nor fake link ownership.
 func (s *Server) realIP(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			first := strings.TrimSpace(strings.Split(xff, ",")[0])
-			if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
-				r.RemoteAddr = ip.String()
+		peer := r.RemoteAddr
+		if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			peer = host
+		}
+		if ipTrusted(peer, s.trusted) {
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				first := strings.TrimSpace(strings.Split(xff, ",")[0])
+				if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
+					r.RemoteAddr = ip.String()
+				}
 			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// ipTrusted matches ip against the configured exact-IP/CIDR allowlist.
+func ipTrusted(ip string, trusted []net.IPNet) bool {
+	addr := net.ParseIP(ip)
+	if addr == nil {
+		return false
+	}
+	for _, n := range trusted {
+		if n.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+// parseTrustedProxies compiles config entries (IP or CIDR) into a match list.
+func parseTrustedProxies(entries []string) []net.IPNet {
+	out := make([]net.IPNet, 0, len(entries))
+	for _, e := range entries {
+		// config validation rejects malformed entries before we get here
+		if ip := net.ParseIP(e); ip != nil {
+			bits := net.IPv4len * 8
+			if ip.To4() == nil {
+				bits = net.IPv6len * 8
+			}
+			out = append(out, net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+			continue
+		}
+		if _, n, err := net.ParseCIDR(e); err == nil {
+			out = append(out, *n)
+		}
+	}
+	return out
 }
 
 // recordMetrics emits request count and latency after the mux picked a route.

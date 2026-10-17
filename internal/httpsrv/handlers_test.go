@@ -30,6 +30,9 @@ func newTestServer(t *testing.T, ratePerMin int) *Server {
 	cfg.DBPath = filepath.Join(t.TempDir(), "test.db")
 	cfg.RateLimitPerMin = ratePerMin
 	cfg.BaseURL = "http://test.local" // no trailing slash, as validate() demands
+	// httptest sends requests from 192.0.2.1; trust it so tests can exercise
+	// the XFF path the way a real reverse proxy would
+	cfg.TrustedProxies = []string{"192.0.2.1/32", "127.0.0.0/8"}
 
 	db, err := store.Open(cfg.DBPath)
 	if err != nil {
@@ -60,6 +63,76 @@ func shorten(t *testing.T, s *Server, body string, headers map[string]string) (*
 	var out map[string]any
 	_ = json.Unmarshal(raw, &out)
 	return resp, out
+}
+
+func TestUntrustedXFFIsIgnored(t *testing.T) {
+	// regression: a forged X-Forwarded-For must not become the client IP
+	t.Parallel()
+	cfg := config.Default()
+	cfg.BaseURL = "http://test.local"
+	cfg.RateLimitPerMin = 100
+	// no trusted proxies configured: header must be ignored
+	cfg.TrustedProxies = nil
+
+	db, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	s := New(cfg, db, shortener.New(db), slog.New(slog.NewTextHandler(os.Stderr, nil)), metrics.New())
+
+	resp, out := shorten(t, s, `{"url":"https://example.com"}`, map[string]string{"X-Forwarded-For": "8.8.8.8"})
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("shorten = %d", resp.StatusCode)
+	}
+	code, _ := out["code"].(string)
+	// the creator is the socket address; the forged header must be ignored.
+	// The requester is the creator itself, so its own IP shows unmasked —
+	// masking rules are covered by TestUnmaskedOnlyForCreator.
+	resp, raw := do(t, s, "GET", "/api/links/"+code, nil, nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"creator_ip":"192.0.2.1"`) {
+		t.Errorf("forged XFF became creator_ip: %s", raw)
+	}
+	var j struct {
+		CreatorIP string `json:"creator_ip"`
+	}
+	_ = json.Unmarshal(raw, &j)
+	if j.CreatorIP != "192.0.2.1" {
+		t.Errorf("creator_ip = %q, want socket address (XFF ignored)", j.CreatorIP)
+	}
+}
+
+// TestUnmaskedOnlyForCreator pins the PII rule: full creator IP is visible
+// only when the requester is the creator; everyone else gets "hidden".
+func TestUnmaskedOnlyForCreator(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, 100)
+	_, out := shorten(t, s, `{"url":"https://example.com"}`, nil)
+	code, _ := out["code"].(string)
+
+	resp, raw := do(t, s, "GET", "/api/links/"+code, nil, nil)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("get as creator = %d", resp.StatusCode)
+	}
+	var j struct {
+		CreatorIP string `json:"creator_ip"`
+	}
+	_ = json.Unmarshal(raw, &j)
+	if j.CreatorIP != "192.0.2.1" {
+		t.Errorf("creator sees own ip: %q, want 192.0.2.1", j.CreatorIP)
+	}
+
+	// a different viewer (XFF through a trusted proxy) must get masked value
+	resp, raw = do(t, s, "GET", "/api/links/"+code, nil, map[string]string{"X-Forwarded-For": "198.51.100.5"})
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"creator_ip":"hidden"`) {
+		t.Errorf("stranger sees creator ip: %s", raw)
+	}
+
+	// public listing: nobody is the creator → all masked
+	resp, raw = do(t, s, "GET", "/api/links", nil, nil)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(raw), `"creator_ip":"hidden"`) {
+		t.Errorf("listing leaked creator ip: %s", raw)
+	}
 }
 
 func TestShortenAndRedirectFlow(t *testing.T) {

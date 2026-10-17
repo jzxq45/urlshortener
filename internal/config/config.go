@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -13,12 +14,13 @@ import (
 // Config is the service configuration. Every field has a default so the
 // server can start with an empty config file.
 type Config struct {
-	Listen          string `yaml:"listen"`
-	DBPath          string `yaml:"db_path"`
-	BaseURL         string `yaml:"base_url"`
-	RetentionDays   int    `yaml:"retention_days"`
-	RateLimitPerMin int    `yaml:"rate_limit_per_min"`
-	LogLevel        string `yaml:"log_level"`
+	Listen          string   `yaml:"listen"`
+	DBPath          string   `yaml:"db_path"`
+	BaseURL         string   `yaml:"base_url"`
+	RetentionDays   int      `yaml:"retention_days"`
+	RateLimitPerMin int      `yaml:"rate_limit_per_min"`
+	LogLevel        string   `yaml:"log_level"`
+	TrustedProxies  []string `yaml:"trusted_proxies"` // IP or CIDR of reverse proxies
 }
 
 // Default returns the built-in defaults.
@@ -30,6 +32,9 @@ func Default() Config {
 		RetentionDays:   90,
 		RateLimitPerMin: 10,
 		LogLevel:        "info",
+		// empty on purpose: without a configured proxy the client IP must
+		// come from the socket, not from spoofable request headers
+		TrustedProxies: nil,
 	}
 }
 
@@ -77,6 +82,16 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("SHORTENER_LOG_LEVEL"); v != "" {
 		c.LogLevel = v
 	}
+	if v := os.Getenv("SHORTENER_TRUSTED_PROXIES"); v != "" {
+		// env arrives as a comma-separated list (lists can't ride ENV arrays)
+		parts := strings.Split(v, ",")
+		c.TrustedProxies = c.TrustedProxies[:0]
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				c.TrustedProxies = append(c.TrustedProxies, p)
+			}
+		}
+	}
 }
 
 func (c Config) validate() error {
@@ -102,6 +117,14 @@ func (c Config) validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("config: log_level must be debug|info|warn|error, got %q", c.LogLevel)
+	}
+	for _, tp := range c.TrustedProxies {
+		if ip := net.ParseIP(tp); ip != nil {
+			continue
+		}
+		if _, _, err := net.ParseCIDR(tp); err != nil {
+			return fmt.Errorf("config: trusted_proxies entry %q is not an IP or CIDR", tp)
+		}
 	}
 	return nil
 }

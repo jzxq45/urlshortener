@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -13,7 +14,7 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("load: %v", err)
 	}
 	want := Default()
-	if cfg != want {
+	if !reflect.DeepEqual(cfg, want) {
 		t.Errorf("defaults changed: %+v", cfg)
 	}
 }
@@ -52,13 +53,14 @@ log_level: debug
 func TestValidateFailures(t *testing.T) {
 	t.Parallel()
 	cases := map[string]func(*Config){
-		"listen":     func(c *Config) { c.Listen = "no-port" },
-		"db_path":    func(c *Config) { c.DBPath = "" },
-		"base_url":   func(c *Config) { c.BaseURL = "ftp://x" },
-		"trailing /": func(c *Config) { c.BaseURL = "http://x/" },
-		"retention":  func(c *Config) { c.RetentionDays = 0 },
-		"rate limit": func(c *Config) { c.RateLimitPerMin = -1 },
-		"log level":  func(c *Config) { c.LogLevel = "verbose" },
+		"listen":             func(c *Config) { c.Listen = "no-port" },
+		"db_path":            func(c *Config) { c.DBPath = "" },
+		"base_url":           func(c *Config) { c.BaseURL = "ftp://x" },
+		"trailing /":         func(c *Config) { c.BaseURL = "http://x/" },
+		"retention":          func(c *Config) { c.RetentionDays = 0 },
+		"rate limit":         func(c *Config) { c.RateLimitPerMin = -1 },
+		"log level":          func(c *Config) { c.LogLevel = "verbose" },
+		"trusted proxie cid": func(c *Config) { c.TrustedProxies = []string{"not-an-ip"} },
 	}
 	for name, mutate := range cases {
 		cfg := Default()

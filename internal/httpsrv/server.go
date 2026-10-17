@@ -5,6 +5,7 @@ import (
 	"context"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -28,6 +29,7 @@ type Server struct {
 	pages   map[string]*template.Template
 	an      *analytics.Service
 	qr      *qr.Renderer
+	trusted []net.IPNet
 }
 
 // clickRec is one queued redirect event.
@@ -59,6 +61,7 @@ func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.
 	}
 	s.an = analytics.New(st, time.Duration(cfg.RetentionDays)*24*time.Hour, log)
 	s.qr = qr.New(cfg.BaseURL)
+	s.trusted = parseTrustedProxies(cfg.TrustedProxies)
 	return s
 }
 
