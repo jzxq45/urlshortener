@@ -15,6 +15,10 @@ type tokenLimiter struct {
 	prunedAt time.Time
 }
 
+// maxBuckets caps memory under attack-sized cardinality; the prune trigger
+// fires at 2x so the O(n) sweep amortizes to O(1) per accepted insert.
+const maxBuckets = 4096
+
 // tbucket stays cheap: refill is embedded in Allow so no timers per key.
 type tbucket struct {
 	tokens float64
@@ -46,16 +50,23 @@ func (l *tokenLimiter) Allow(key string) bool {
 	}
 	// new keys start full so a fresh client can burst its allowance
 	l.buckets[key] = &tbucket{tokens: float64(l.capacity) - 1, last: now}
-	if len(l.buckets) > 4096 && now.Sub(l.prunedAt) > time.Minute {
+	// trigger is 2x the target size: between sweeps up to maxBuckets fresh
+	// keys pay O(1), so the full scan never rides a request hotspot
+	if len(l.buckets) >= 2*maxBuckets && now.Sub(l.prunedAt) > time.Minute {
 		l.prune(now)
 		l.prunedAt = now
 	}
 	return true
 }
 
-// prune drops buckets idle over two refill windows.
+// prune drops already-expired buckets until the map is back at maxBuckets;
+// running to the target (not to zero) is what makes it amortized O(1).
 func (l *tokenLimiter) prune(now time.Time) {
 	for k, b := range l.buckets {
+		if len(l.buckets) <= maxBuckets {
+			return
+		}
+		// idle over two refill windows = unusable anyway, safe to drop
 		if now.Sub(b.last) > 2*time.Minute {
 			delete(l.buckets, k)
 		}

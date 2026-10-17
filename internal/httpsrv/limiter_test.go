@@ -41,7 +41,7 @@ func TestTokenLimiterBurstAndRefill(t *testing.T) {
 func TestTokenLimiterPrune(t *testing.T) {
 	t.Parallel()
 	l := newTokenLimiter(1)
-	for i := 0; i < 4096; i++ {
+	for i := 0; i < 2*maxBuckets; i++ {
 		l.Allow(fmt.Sprintf("k%d", i))
 	}
 	// make all buckets idle for longer than the prune window and let the
@@ -58,7 +58,14 @@ func TestTokenLimiterPrune(t *testing.T) {
 	l.mu.Lock()
 	n := len(l.buckets)
 	l.mu.Unlock()
-	if n > 2 {
+	// sweep runs to maxBuckets (+ the catalyst): the 2x threshold keeps the
+	// scan amortized instead of firing on every new key past the cap
+	if n > maxBuckets+1 {
 		t.Errorf("buckets not pruned: %d", n)
 	}
+	l.mu.Lock()
+	if len(l.buckets) < maxBuckets {
+		t.Errorf("prune stopped too early: %d", n)
+	}
+	l.mu.Unlock()
 }
