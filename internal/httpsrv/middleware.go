@@ -2,6 +2,7 @@ package httpsrv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -224,6 +225,13 @@ func parseTrustedProxies(entries []string) []net.IPNet {
 		}
 	}
 	return out
+}
+
+// clientMissing reports that the caller disconnected before the response:
+// such failures are user-side noise, not server incidents. Logging or
+// counting them as 500s buries real alerts under bot-abort spam.
+func clientMissing(r *http.Request, err error) bool {
+	return r.Context().Err() != nil || errors.Is(err, context.Canceled)
 }
 
 // recordMetrics emits request count and latency after the mux picked a route.

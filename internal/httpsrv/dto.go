@@ -1,6 +1,7 @@
 package httpsrv
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -27,8 +28,17 @@ func writeJSON(w http.ResponseWriter, status int, body any) {
 	_ = enc.Encode(body)
 }
 
-// handleHealthz powers checks from load balancers.
+// handleHealthz answers load balancers. A server that cannot reach its
+// database must not receive traffic, so both pools are pinged with a short
+// deadline; anything unresponsive yields 503.
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+	defer cancel()
+	if err := s.st.Ping(ctx); err != nil {
+		s.log.Error("healthz ping failed", "err", err)
+		writeErr(w, http.StatusServiceUnavailable, "db unresponsive")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 

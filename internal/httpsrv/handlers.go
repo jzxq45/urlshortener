@@ -81,6 +81,9 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 		writeErrEither(w, r, http.StatusBadRequest, "invalid json body: "+err.Error())
 		return
 	}
+	if r.Context().Err() != nil {
+		return
+	}
 
 	var ttl *time.Duration
 	if req.TTLSeconds != 0 {
@@ -116,6 +119,8 @@ func (s *Server) handleShorten(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, shortener.ErrValidation):
 		s.m.Shorten.Inc(map[string]string{"status": "400"})
 		writeErrEither(w, r, http.StatusBadRequest, err.Error())
+		return
+	case clientMissing(r, err):
 		return
 	case err != nil:
 		s.m.Shorten.Inc(map[string]string{"status": "500"})
@@ -170,6 +175,9 @@ func (s *Server) handleGetLink(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, "link not found")
 			return
 		}
+		if clientMissing(r, err) {
+			return
+		}
 		s.log.Error("get link failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
@@ -184,6 +192,9 @@ func (s *Server) handleDeleteLink(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "link not found")
+			return
+		}
+		if clientMissing(r, err) {
 			return
 		}
 		s.log.Error("delete get failed", "err", err)
@@ -218,6 +229,9 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, store.ErrNotFound):
 			s.m.Redirect.Inc(map[string]string{"status": "404"})
 			writeErr(w, http.StatusNotFound, "link not found")
+		case clientMissing(r, err):
+			// caller hung up mid-lookup: nobody receives a status anyway
+			return
 		default:
 			s.m.Redirect.Inc(map[string]string{"status": "500"})
 			s.log.Error("redirect lookup failed", "err", err)

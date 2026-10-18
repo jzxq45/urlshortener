@@ -158,6 +158,9 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) {
 			s.render(w, "404", http.StatusNotFound, map[string]any{"Title": "Not found", "Code": code})
 			return
 		}
+		if clientMissing(r, err) {
+			return
+		}
 		s.log.Error("link page lookup failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return

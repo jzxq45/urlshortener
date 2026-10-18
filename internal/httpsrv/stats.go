@@ -38,6 +38,9 @@ func (s *Server) handleLinkStats(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusNotFound, "link not found")
 			return
 		}
+		if clientMissing(r, err) {
+			return
+		}
 		s.log.Error("stats lookup failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
 		return
@@ -130,6 +133,9 @@ func (s *Server) handleQR(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "link not found")
+			return
+		}
+		if clientMissing(r, err) {
 			return
 		}
 		s.log.Error("qr lookup failed", "err", err)
