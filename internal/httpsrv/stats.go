@@ -119,6 +119,12 @@ func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+code+`.csv"`)
+	// WriteTimeout (15s) applies per request; a full history stream can run
+	// far longer, so this handler owns its own write deadline ignoring the
+	// returned error (an unflushable connection dies on the next write anyway)
+	if rc := http.NewResponseController(w); rc != nil {
+		_ = rc.SetWriteDeadline(time.Now().Add(10 * time.Minute))
+	}
 	if _, err := s.an.ExportCSV(r.Context(), code, w); err != nil {
 		// headers are sent; log only
 		s.log.Error("export failed", "err", err)
