@@ -334,13 +334,28 @@ func (s *Store) ClicksCountGlobal(ctx context.Context, since time.Time) (int64, 
 }
 
 // RetentionDeleteClicks removes clicks older than the cutoff and returns how
-// many rows were removed.
+// many rows were removed. The delete runs in bounded chunks: a single
+// unbounded DELETE on the sole write connection would stall every new click
+// for the whole sweep and balloon the WAL.
 func (s *Store) RetentionDeleteClicks(ctx context.Context, cutoff time.Time) (int64, error) {
-	res, err := s.rw.ExecContext(ctx, `DELETE FROM clicks WHERE ts < ?`, unix(cutoff))
-	if err != nil {
-		return 0, fmt.Errorf("store: retention delete: %w", err)
+	const chunk = 10_000
+	var total int64
+	for {
+		res, err := s.rw.ExecContext(ctx,
+			`DELETE FROM clicks WHERE rowid IN (SELECT rowid FROM clicks WHERE ts < ? LIMIT ?)`,
+			unix(cutoff), chunk)
+		if err != nil {
+			return total, fmt.Errorf("store: retention delete: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("store: retention delete affected: %w", err)
+		}
+		total += n
+		if n < chunk {
+			return total, nil
+		}
 	}
-	return res.RowsAffected()
 }
 
 // --- helpers -------------------------------------------------------------
