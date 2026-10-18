@@ -109,23 +109,25 @@ func (h *HistogramVec) Observe(label string, v float64) {
 
 // Registry owns the metric set rendered at /metrics.
 type Registry struct {
-	HTTPRequests *CounterVec // http_requests_total{method,path,status}
-	Shorten      *CounterVec // shorten_total{status}
-	Redirect     *CounterVec // redirect_total{status}
-	Clicks       *CounterVec // clicks_total{}
-	ActiveLinks  *Gauge      // active_links
-	Duration     *HistogramVec
+	HTTPRequests  *CounterVec // http_requests_total{method,path,status}
+	Shorten       *CounterVec // shorten_total{status}
+	Redirect      *CounterVec // redirect_total{status}
+	Clicks        *CounterVec // clicks_total{}
+	ClicksDropped *CounterVec // clicks_dropped_total{}
+	ActiveLinks   *Gauge      // active_links
+	Duration      *HistogramVec
 }
 
 // New wires the registry with the standard metric names.
 func New() *Registry {
 	return &Registry{
-		HTTPRequests: newCounterVec("http_requests_total", "Total HTTP requests processed.", "method", "path", "status"),
-		Shorten:      newCounterVec("shorten_total", "Total /api/shorten outcomes.", "status"),
-		Redirect:     newCounterVec("redirect_total", "Total redirect outcomes.", "status"),
-		Clicks:       newCounterVec("clicks_total", "Total recorded redirect clicks."),
-		ActiveLinks:  &Gauge{name: "active_links", help: "Links that are not expired."},
-		Duration:     newHistogramVec("http_request_duration_seconds", "Handler latency in seconds.", "path"),
+		HTTPRequests:  newCounterVec("http_requests_total", "Total HTTP requests processed.", "method", "path", "status"),
+		Shorten:       newCounterVec("shorten_total", "Total /api/shorten outcomes.", "status"),
+		Redirect:      newCounterVec("redirect_total", "Total redirect outcomes.", "status"),
+		Clicks:        newCounterVec("clicks_total", "Total accepted redirect clicks."),
+		ClicksDropped: newCounterVec("clicks_dropped_total", "Clicks dropped when the ingest queue was full."),
+		ActiveLinks:   &Gauge{name: "active_links", help: "Links that are not expired."},
+		Duration:      newHistogramVec("http_request_duration_seconds", "Handler latency in seconds.", "path"),
 	}
 }
 
@@ -137,6 +139,7 @@ func (r *Registry) Collect() string {
 	writeCounterVec(&b, r.Shorten)
 	writeCounterVec(&b, r.Redirect)
 	writeCounterVec(&b, r.Clicks)
+	writeCounterVec(&b, r.ClicksDropped)
 	writeGauge(&b, r.ActiveLinks)
 	writeHistogram(&b, r.Duration)
 	return b.String()

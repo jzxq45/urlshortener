@@ -97,6 +97,7 @@ func (s *Store) CountActiveLinks(ctx context.Context, now time.Time) (int64, err
 const (
 	sqlInsertClick = `INSERT INTO clicks (link_id, ts, ip, user_agent, referer) VALUES (?, ?, ?, ?, ?)`
 	sqlBumpClicks  = `UPDATE links SET clicks = clicks + 1 WHERE id = ?`
+	sqlBumpClicksN = `UPDATE links SET clicks = clicks + ? WHERE id = ?`
 )
 
 // IncrementClicks bumps the cached counters on the link row.
@@ -119,6 +120,7 @@ func (s *Store) InsertClick(ctx context.Context, c Click) error {
 // RecordClick writes the click row and bumps the link counter as one
 // transaction: two independent writes can split the difference on a transient
 // error (SQLITE_BUSY) and leave the counter drifting from the real history.
+// Production writes go through InsertClicksBatch; this remains the prim path.
 func (s *Store) RecordClick(ctx context.Context, c Click) error {
 	tx, err := s.rw.BeginTx(ctx, nil)
 	if err != nil {
@@ -134,6 +136,50 @@ func (s *Store) RecordClick(ctx context.Context, c Click) error {
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: record click commit: %w", err)
+	}
+	return nil
+}
+
+// InsertClicksBatch writes a batch of click rows and the matching counter
+// bumps in one transaction: a single commit amortizes over the whole batch,
+// which is the difference between hundreds and ten-thousands of clicks/sec.
+func (s *Store) InsertClicksBatch(ctx context.Context, clicks []Click) error {
+	if len(clicks) == 0 {
+		return nil
+	}
+	tx, err := s.rw.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: batch click begin tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }() // no-op after a successful Commit
+
+	var (
+		qb   strings.Builder
+		args = make([]any, 0, len(clicks)*5)
+	)
+	qb.WriteString(`INSERT INTO clicks (link_id, ts, ip, user_agent, referer) VALUES `)
+	for i, c := range clicks {
+		if i > 0 {
+			qb.WriteString(",")
+		}
+		qb.WriteString("(?,?,?,?,?)")
+		args = append(args, c.LinkID, unix(c.Ts), c.IP, c.UserAgent, c.Referer)
+	}
+	if _, err := tx.ExecContext(ctx, qb.String(), args...); err != nil {
+		return fmt.Errorf("store: batch click insert: %w", err)
+	}
+	// one UPDATE per affected link, not per row
+	bumps := make(map[int64]int64, 1)
+	for _, c := range clicks {
+		bumps[c.LinkID]++
+	}
+	for id, n := range bumps {
+		if _, err := tx.ExecContext(ctx, sqlBumpClicksN, n, id); err != nil {
+			return fmt.Errorf("store: batch click counter: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: batch click commit: %w", err)
 	}
 	return nil
 }

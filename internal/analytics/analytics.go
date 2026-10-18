@@ -13,16 +13,92 @@ import (
 	"urlshortener/internal/store"
 )
 
-// Service owns retention scheduling and CSV export for handlers.
+// Service owns click ingestion, CSV export and the retention sweep.
 type Service struct {
 	st        *store.Store
 	retention time.Duration
 	log       *slog.Logger
+	// in is the ingest buffer; a saturated queue means the caller drops
+	// events (and counts them) — redirects must never wait on analytics
+	in chan store.Click
 }
+
+// IngestCap is the number of clicks buffered before drops start.
+const IngestCap = 4096
+
+const (
+	ingestMaxBatch  = 512
+	ingestFlushTick = 200 * time.Millisecond
+)
 
 // New builds the analytics service; retention must be positive.
 func New(st *store.Store, retention time.Duration, log *slog.Logger) *Service {
-	return &Service{st: st, retention: retention, log: log}
+	return &Service{
+		st:        st,
+		retention: retention,
+		log:       log,
+		in:        make(chan store.Click, IngestCap),
+	}
+}
+
+// Ingest queues one click for asynchronous persistence; false means the
+// buffer is full and the caller must account for the drop.
+func (s *Service) Ingest(c store.Click) bool {
+	select {
+	case s.in <- c:
+		return true
+	default:
+		return false
+	}
+}
+
+// Run batches queued clicks into the store: one commit covers ingestMaxBatch
+// rows instead of one commit per click. It runs until ctx is done; on cancel
+// (which the server schedules after the HTTP drain) every already-accepted
+// event is flushed with a detached context before returning.
+func (s *Service) Run(ctx context.Context) error {
+	// accepted clicks must reach the database even on shutdown: db close
+	// happens later (main's defer runs after errgroup.Wait)
+	writeCtx := context.WithoutCancel(ctx)
+	batch := make([]store.Click, 0, ingestMaxBatch)
+	flush := func() {
+		if len(batch) == 0 {
+			return
+		}
+		if err := s.st.InsertClicksBatch(writeCtx, batch); err != nil {
+			s.log.Error("click batch insert failed", "n", len(batch), "err", err)
+		} else {
+			s.log.Debug("click batch saved", "n", len(batch))
+		}
+		batch = batch[:0]
+	}
+	t := time.NewTicker(ingestFlushTick)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			// drain: take everything currently buffered, then commit the tail
+			for {
+				select {
+				case c := <-s.in:
+					batch = append(batch, c)
+					if len(batch) == ingestMaxBatch {
+						flush()
+					}
+				default:
+					flush()
+					return nil
+				}
+			}
+		case <-t.C:
+			flush()
+		case c := <-s.in:
+			batch = append(batch, c)
+			if len(batch) >= ingestMaxBatch {
+				flush()
+			}
+		}
+	}
 }
 
 // Start runs the retention sweep immediately and then once a day until ctx

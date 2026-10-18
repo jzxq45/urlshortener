@@ -220,6 +220,50 @@ func pragInt(t *testing.T, db *sql.DB, q string) int {
 	return n
 }
 
+// TestInsertClicksBatch pins the batch invariant: every row lands and every
+// affected link's counter moves by exactly the number of its rows — together
+// in one transaction.
+func TestInsertClicksBatch(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	a := Link{Code: "bata", URL: "https://a.example", CreatedAt: time.Now().UTC()}
+	b := Link{Code: "batb", URL: "https://b.example", CreatedAt: time.Now().UTC()}
+	if err := s.CreateLink(ctx, &a); err != nil {
+		t.Fatalf("create a: %v", err)
+	}
+	if err := s.CreateLink(ctx, &b); err != nil {
+		t.Fatalf("create b: %v", err)
+	}
+	now := time.Now().UTC()
+	batch := []Click{
+		{LinkID: a.ID, Ts: now, IP: "1.1.1.1"},
+		{LinkID: a.ID, Ts: now, IP: "2.2.2.2"},
+		{LinkID: a.ID, Ts: now, IP: "3.3.3.3"},
+		{LinkID: b.ID, Ts: now, IP: "4.4.4.4"},
+	}
+	if err := s.InsertClicksBatch(ctx, batch); err != nil {
+		t.Fatalf("batch: %v", err)
+	}
+	if n, _ := s.TotalClicksForLink(ctx, a.ID); n != 3 {
+		t.Errorf("a rows = %d, want 3", n)
+	}
+	if n, _ := s.TotalClicksForLink(ctx, b.ID); n != 1 {
+		t.Errorf("b rows = %d, want 1", n)
+	}
+	if ga, err := s.GetLink(ctx, "bata"); err != nil || ga.Clicks != 3 {
+		t.Errorf("a counter = %d err=%v, want 3", ga.Clicks, err)
+	}
+	if gb, err := s.GetLink(ctx, "batb"); err != nil || gb.Clicks != 1 {
+		t.Errorf("b counter = %d err=%v, want 1", gb.Clicks, err)
+	}
+	// empty batch is a no-op, not an error
+	if err := s.InsertClicksBatch(ctx, nil); err != nil {
+		t.Errorf("empty batch: %v", err)
+	}
+}
+
 func TestLinkExpired(t *testing.T) {
 	t.Parallel()
 	now := time.Now()

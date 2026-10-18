@@ -16,6 +16,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"strconv"
+	"urlshortener/internal/analytics"
 	"urlshortener/internal/config"
 	"urlshortener/internal/metrics"
 	"urlshortener/internal/qr"
@@ -187,12 +189,12 @@ func TestShortenAndRedirectFlow(t *testing.T) {
 		t.Errorf("Location = %q", resp.Header.Get("Location"))
 	}
 
-	// the click lands through the async queue: run the worker and poll the
-	// store until the click shows up (deterministic, no time.Sleep)
+	// the click lands through the async pipeline: run the ingest loop and
+	// poll the store until the click shows up (deterministic, no time.Sleep)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		s.Workers(ctx)
+		_ = s.IngestLoop(ctx)
 		close(done)
 	}()
 	t.Cleanup(func() { cancel(); <-done })
@@ -209,9 +211,9 @@ func TestShortenAndRedirectFlow(t *testing.T) {
 	}
 }
 
-func TestWorkersSavesClickAfterCtxCancel(t *testing.T) {
-	// regression: worker must not drop an enqueued click when ctx is already
-	// canceled (graceful-shutdown drain path)
+func TestIngestSavesClickAfterCtxCancel(t *testing.T) {
+	// regression: the pipeline must not drop an accepted click when ctx is
+	// already canceled (graceful-shutdown drain path)
 	t.Parallel()
 	s := newTestServer(t, 100)
 	code := "wtesttst"
@@ -225,9 +227,9 @@ func TestWorkersSavesClickAfterCtxCancel(t *testing.T) {
 	queueEvent()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // nothing readable after this point: the drain branch only survives
+	cancel() // nothing readable after this point: the drain branch must flush
 	done := make(chan struct{})
-	go func() { s.Workers(ctx); close(done) }()
+	go func() { _ = s.IngestLoop(ctx); close(done) }()
 	<-done
 
 	var got store.Link
@@ -237,6 +239,24 @@ func TestWorkersSavesClickAfterCtxCancel(t *testing.T) {
 		return e == nil && got.Clicks == 1
 	}); err != nil {
 		t.Fatalf("click lost after cancel: err=%v link=%+v", err, got)
+	}
+}
+
+// TestIngestDropIsCounted pins the drop-accounting invariant: saturating the
+// queue must surface in clicks_dropped_total, not vanish silently.
+func TestIngestDropIsCounted(t *testing.T) {
+	t.Parallel()
+	s := newTestServer(t, 100)
+	req := httptest.NewRequest("GET", "/r/whatever", nil)
+	for i := 0; i <= analytics.IngestCap; i++ { // one more than the buffer holds
+		s.enqueueClick(req, 1)
+	}
+	prom := s.m.Collect()
+	if !strings.Contains(prom, "clicks_dropped_total 1") {
+		t.Errorf("drop not counted:\n%s", prom)
+	}
+	if n := strings.Count(prom, "clicks_total "+strconv.Itoa(analytics.IngestCap)); n != 1 {
+		t.Errorf("accepted count wrong:\n%s", prom)
 	}
 }
 

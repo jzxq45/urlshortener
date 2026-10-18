@@ -75,12 +75,11 @@ func main() {
 		}
 		return nil
 	})
-	// click worker gets its own ctx: it must keep draining while the HTTP
-	// server is still shutting down (in-flight redirects still enqueue)
+	// click ingest pipeline gets its own ctx: it must keep draining while
+	// the HTTP server is still shutting down (in-flight redirects enqueue)
 	workersCtx, workersCancel := context.WithCancel(ctx)
 	g.Go(func() error {
-		s.Workers(workersCtx)
-		return nil
+		return s.IngestLoop(workersCtx)
 	})
 	// daily click retention sweep (config: retention_days)
 	g.Go(func() error {

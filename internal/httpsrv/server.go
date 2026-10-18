@@ -26,23 +26,13 @@ type Server struct {
 	log     *slog.Logger
 	m       *metrics.Registry
 	limiter *tokenLimiter
-	clicks  chan clickRec
 	pages   map[string]*template.Template
 	an      *analytics.Service
 	qr      *qr.Renderer
 	trusted []net.IPNet
 }
 
-// clickRec is one queued redirect event.
-type clickRec struct {
-	linkID  int64
-	ts      time.Time
-	ip      string
-	ua      string
-	referer string
-}
-
-// New builds the Server with an in-memory click queue for async inserts.
+// New builds the Server with an analytics-backed async click pipeline.
 // Templates are static assets: a broken parse fails startup instead of
 // silently serving a web UI that returns 500 on every page.
 func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.Logger, m *metrics.Registry) (*Server, error) {
@@ -53,7 +43,6 @@ func New(cfg config.Config, st *store.Store, sh *shortener.Shortener, log *slog.
 		log:     log,
 		m:       m,
 		limiter: newTokenLimiter(cfg.RateLimitPerMin),
-		clicks:  make(chan clickRec, 512),
 	}
 	sets, err := buildPages()
 	if err != nil {
@@ -107,43 +96,9 @@ func (s *Server) linkJSONs(links []store.Link) []linkJSON {
 	return out
 }
 
-// Workers drains the click queue until ctx is done, inserting clicks and
-// bumping the link counter. Inserts run with a detached context (WithoutCancel)
-// so a race between taking an event from the queue and ctx cancellation cannot
-// silently drop a click; on shutdown the loop drains non-blocking.
-func (s *Server) Workers(ctx context.Context) {
-	// the queue is the ownership boundary: once an event is taken it must
-	// reach the DB regardless of loop ctx state
-	dbCtx := context.WithoutCancel(ctx)
-	for {
-		select {
-		case <-ctx.Done():
-			for {
-				select {
-				case c := <-s.clicks:
-					// detached: DB close happens after errgroup.Wait()
-					s.saveClick(dbCtx, c)
-				default:
-					return
-				}
-			}
-		case c := <-s.clicks:
-			s.saveClick(dbCtx, c)
-		}
-	}
-}
-
-func (s *Server) saveClick(ctx context.Context, c clickRec) {
-	s.m.Clicks.Inc(nil)
-	// row and counter move together: a half-saved click would desynchronize
-	// link.clicks from the actual clicks history
-	if err := s.st.RecordClick(ctx, store.Click{
-		LinkID:    c.linkID,
-		Ts:        c.ts,
-		IP:        c.ip,
-		UserAgent: c.ua,
-		Referer:   c.referer,
-	}); err != nil {
-		s.log.Error("click save failed", "err", err)
-	}
+// IngestLoop runs the async click pipeline until ctx is done; on shutdown
+// (scheduled after the HTTP drain) it flushes every accepted click to the
+// database before returning.
+func (s *Server) IngestLoop(ctx context.Context) error {
+	return s.an.Run(ctx)
 }

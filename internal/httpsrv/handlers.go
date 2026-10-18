@@ -252,21 +252,23 @@ func (s *Server) handleRedirect(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusFound)
 }
 
-// enqueueClick truncates oversized headers and drops events when the queue is
-// saturated (redirect availability beats complete analytics).
+// enqueueClick hands the redirect event to the async pipeline without ever
+// blocking the response. A saturated queue drops the event loudly: a loss
+// counter keeps analytics honest instead of silently incomplete.
 func (s *Server) enqueueClick(r *http.Request, linkID int64) {
-	c := clickRec{
-		linkID:  linkID,
-		ts:      time.Now().UTC(),
-		ip:      clientIP(r),
-		ua:      truncateStr(r.UserAgent(), 512),
-		referer: truncateStr(r.Referer(), 2048),
+	c := store.Click{
+		LinkID:    linkID,
+		Ts:        time.Now().UTC(),
+		IP:        clientIP(r),
+		UserAgent: truncateStr(r.UserAgent(), 512),
+		Referer:   truncateStr(r.Referer(), 2048),
 	}
-	select {
-	case s.clicks <- c:
-	default:
-		s.log.Warn("click queue full, dropping event", "code", linkID)
+	if s.an.Ingest(c) {
+		s.m.Clicks.Inc(nil)
+		return
 	}
+	s.m.ClicksDropped.Inc(nil)
+	s.log.Warn("click queue full, dropping event", "code", linkID)
 }
 
 // parseQueryInt reads an int query param with a fallback default.
