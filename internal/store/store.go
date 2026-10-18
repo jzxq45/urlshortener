@@ -4,6 +4,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"embed"
 	"fmt"
@@ -64,6 +65,12 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: open ro: %w", err)
 	}
 	ro.SetMaxOpenConns(20)
+	// Go defaults MaxIdleConns to 2 — with an idle cap far below the open cap
+	// every traffic burst would churn open/close syscall+pragma setup. Hold
+	// the pool warm and recycle connections before driver/file drift.
+	ro.SetMaxIdleConns(20)
+	ro.SetConnMaxIdleTime(5 * time.Minute)
+	ro.SetConnMaxLifetime(time.Hour)
 
 	s := &Store{rw: rw, ro: ro}
 	if err := s.migrate(rw); err != nil {
@@ -129,6 +136,17 @@ func firstLine(stmt string) string {
 // Close closes both pools.
 func (s *Store) Close() error {
 	return firstErr(s.ro.Close(), s.rw.Close())
+}
+
+// Ping verifies both pools still reach the database inside their deadlines.
+func (s *Store) Ping(ctx context.Context) error {
+	if err := s.rw.PingContext(ctx); err != nil {
+		return fmt.Errorf("store: rw ping: %w", err)
+	}
+	if err := s.ro.PingContext(ctx); err != nil {
+		return fmt.Errorf("store: ro ping: %w", err)
+	}
+	return nil
 }
 
 func firstErr(a, b error) error {
