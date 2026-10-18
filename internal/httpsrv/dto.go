@@ -7,17 +7,21 @@ import (
 	"time"
 )
 
-// writeErr answers with a JSON {"error": msg} body.
+// writeErr answers with a JSON {"error": msg} body. Encode errors here are
+// not reportable: headers are out, the client gets a truncated body at worst.
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// writeJSON answers with a JSON body; nothing is written after headers.
+// writeJSON answers with a JSON body. SetEscapeHTML(false) is safe because
+// the content type is always application/json — browsers never sniff it as
+// HTML (X-Content-Type-Options: nosniff is set globally on top).
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
+	// encode errors are not reportable after WriteHeader (see writeErr)
 	enc := json.NewEncoder(w)
 	enc.SetEscapeHTML(false)
 	_ = enc.Encode(body)

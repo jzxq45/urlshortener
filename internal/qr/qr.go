@@ -45,10 +45,14 @@ func New(base string) *Renderer {
 	return &Renderer{base: base, c: cache{m: make(map[string]*listN, CacheCap)}, ttl: time.Hour}
 }
 
-// PNG returns the QR PNG of base+'/r/'+code, cached by code.
+// PNG returns the QR PNG of base+'/r/'+code, cached by code. The cache lock
+// covers check+encode+put: a check-then-act split would let concurrent misses
+// for the same code each run the encode (harmless, but wasted CPU).
 func (r *Renderer) PNG(code string) ([]byte, error) {
-	if c, ok := r.get(code); ok {
-		return c, nil
+	r.c.mu.Lock()
+	defer r.c.mu.Unlock()
+	if png, ok := r.get(code); ok {
+		return png, nil
 	}
 	q, err := qrcode.New(r.base+"/r/"+code, qrcode.Medium)
 	if err != nil {
@@ -63,9 +67,8 @@ func (r *Renderer) PNG(code string) ([]byte, error) {
 	return png, nil
 }
 
+// get returns the cached PNG; caller must hold c.mu.
 func (r *Renderer) get(code string) ([]byte, bool) {
-	r.c.mu.Lock()
-	defer r.c.mu.Unlock()
 	n, ok := r.c.m[code]
 	if !ok {
 		return nil, false
@@ -78,9 +81,8 @@ func (r *Renderer) get(code string) ([]byte, bool) {
 	return n.e.png, true
 }
 
+// put inserts/updates the cached PNG; caller must hold c.mu.
 func (r *Renderer) put(code string, png []byte) {
-	r.c.mu.Lock()
-	defer r.c.mu.Unlock()
 	if n, ok := r.c.m[code]; ok {
 		n.e = &entry{png: png, expiresAt: time.Now().Add(r.ttl)}
 		r.touch(n)

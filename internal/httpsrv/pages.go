@@ -170,7 +170,7 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, "link", http.StatusOK, map[string]any{
 		"Title":   "Link " + l.Code,
-		"Link":    s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r)),
+		"Link":    s.toLinkJSON(l, s.cfg.BaseURL, clientIP(r), now),
 		"Stats":   stats,
 		"Expired": l.Expired(now),
 	})
@@ -178,6 +178,11 @@ func (s *Server) handleLinkPage(w http.ResponseWriter, r *http.Request) {
 
 // pageStats aggregates the windows the details page shows. Unless the viewer
 // is the link's creator, recent click IPs are masked (no PII to strangers).
+//
+// The stats block runs several small windows back-to-back. They are all
+// read-only and ride the 20-connection query_only pool while the writer stays
+// free, so fusing them into one CTE would complicate the SQL for no practical
+// gain at this scale.
 func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time, isCreator bool) (linkStats, error) {
 	st := s.st
 	out := linkStats{
