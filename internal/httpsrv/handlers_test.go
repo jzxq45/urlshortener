@@ -397,7 +397,7 @@ func TestStatsAndCSV(t *testing.T) {
 	t.Parallel()
 	s := newTestServer(t, 100)
 	code := "statstest"
-	if err := s.st.CreateLink(context.Background(), &store.Link{Code: code, URL: "https://example.com", CreatedAt: time.Now().UTC()}); err != nil {
+	if err := s.st.CreateLink(context.Background(), &store.Link{Code: code, URL: "https://example.com", CreatedAt: time.Now().UTC(), CreatorIP: "192.0.2.1"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.st.InsertClick(context.Background(), store.Click{LinkID: 1, Ts: time.Now().UTC(), IP: "5.5.5.5", Referer: "https://r"}); err != nil {
@@ -425,6 +425,12 @@ func TestStatsAndCSV(t *testing.T) {
 	}
 	if !strings.Contains(resp.Header.Get("Content-Disposition"), code) {
 		t.Error("csv disposition missing code")
+	}
+	// the stream carries raw IPs: strangers must not get it at all
+	resp, _ = do(t, s, "GET", "/api/links/"+code+"/export.csv", nil,
+		map[string]string{"X-Forwarded-For": "198.51.100.5"})
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("stranger csv = %d, want 403", resp.StatusCode)
 	}
 	resp, _ = do(t, s, "GET", "/api/links/unknown/stats", nil, nil)
 	if resp.StatusCode != http.StatusNotFound {

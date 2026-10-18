@@ -96,16 +96,22 @@ func (s *Server) handleLinkStats(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleExportCSV answers GET /api/links/{code}/export.csv with the raw
-// click stream; 404 for unknown codes.
+// click stream; 404 for unknown codes. Ownership-gated: the stream carries
+// full client IPs, so unlike the stats views it is never served to strangers.
 func (s *Server) handleExportCSV(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
-	if _, err := s.st.GetLink(r.Context(), code); err != nil {
+	l, err := s.st.GetLink(r.Context(), code)
+	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			writeErr(w, http.StatusNotFound, "link not found")
 			return
 		}
 		s.log.Error("export lookup failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	if l.CreatorIP != clientIP(r) {
+		writeErr(w, http.StatusForbidden, "only creator can export")
 		return
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
