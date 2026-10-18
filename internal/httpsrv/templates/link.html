@@ -21,18 +21,13 @@
   <div class="card"><div class="k">Unique IPs</div><div class="v">{{.Stats.UniqueIPs}}</div></div>
 </section>
 
-<div class="grid2">
-  <section class="panel">
-    <h2>Clicks per day (30d)</h2>
-    <canvas data-chart="daily30" width="520" height="240"></canvas>
-    <script type="application/json" data-json="daily30">{{jsonObj .Stats.ChartDaily}}</script>
-  </section>
-  <section class="panel">
-    <h2>Clicks per hour (24h)</h2>
-    <canvas data-chart="hourly24" width="520" height="240"></canvas>
-    <script type="application/json" data-json="hourly24">{{jsonObj .Stats.ChartHourly}}</script>
-  </section>
-</div>
+<section class="panel">
+  <h2>Clicks per day (last 7)</h2>
+  <table class="tbl"><thead><tr><th>Day</th><th class="n">Clicks</th></tr></thead><tbody>
+  {{- range .Stats.Days7}}<tr><td>{{humanDay .Day}}</td><td class="n">{{.Count}}</td></tr>
+  {{- else}}<tr><td colspan="2" class="empty">no clicks yet</td></tr>{{- end}}
+  </tbody></table>
+</section>
 
 <div class="grid2">
   <section class="panel">

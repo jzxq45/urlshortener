@@ -68,27 +68,4 @@
       });
     }
   });
-
-  // charts: parse JSON payloads and render with Chart.js if the CDN is up
-  document.querySelectorAll('script[type="application/json"][data-json]').forEach(function (s) {
-    var target = document.querySelector('canvas[data-chart="' + s.getAttribute('data-json') + '"]');
-    if (!target || !window.Chart) return;
-    var pts;
-    try { pts = JSON.parse(s.textContent); } catch (_) { return; }
-    new Chart(target.getContext('2d'), {
-      type: 'bar',
-      data: {
-        labels: pts.map(function (p) { return p.label; }),
-        datasets: [{ label: 'clicks', data: pts.map(function (p) { return p.count; }), backgroundColor: '#58a6ff' }],
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#8b949e' }, grid: { display: false } },
-          y: { ticks: { color: '#8b949e', precision: 0 }, beginAtZero: true },
-        },
-      },
-    });
-  });
 })();

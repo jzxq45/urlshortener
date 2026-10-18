@@ -139,14 +139,7 @@ type linkStats struct {
 	UniqueIPs   int64
 	TopReferers []store.RefCount
 	Recent      []store.ClickRow
-	ChartDaily  []chartPoint
-	ChartHourly []chartPoint
-}
-
-// chartPoint feeds Chart.js labels/datasets.
-type chartPoint struct {
-	Label string `json:"label"`
-	Count int64  `json:"count"`
+	Days7       []store.DayCount
 }
 
 // handleLinkPage answers GET /{code} with the link details page (404 fallback).
@@ -191,8 +184,7 @@ func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time, isC
 	out := linkStats{
 		TopReferers: []store.RefCount{},
 		Recent:      []store.ClickRow{},
-		ChartDaily:  []chartPoint{},
-		ChartHourly: []chartPoint{},
+		Days7:       []store.DayCount{},
 	}
 	var err error
 	if out.Clicks24h, err = st.ClicksInWindow(ctx, linkID, now.Add(-24*time.Hour)); err != nil {
@@ -221,51 +213,16 @@ func (s *Server) pageStats(ctx context.Context, linkID int64, now time.Time, isC
 			out.Recent[i].IP = maskIP(out.Recent[i].IP)
 		}
 	}
-	var daily []store.DayCount
-	if daily, err = st.ClicksByDay(ctx, linkID, now.Add(-30*24*time.Hour), now.Add(time.Hour)); err != nil {
+	// 7-day daily table for the page (the 30d/24h hourly series stay in the
+	// JSON API); a densified 30-point chart needs JS, the table does not
+	if out.Days7, err = st.ClicksByDay(ctx, linkID, now.Add(-7*24*time.Hour), now.Add(time.Hour)); err != nil {
 		return out, err
 	}
-	out.ChartDaily = toChartDaily(daily)
-	var hourly []store.HourCount
-	if hourly, err = st.ClicksByHour(ctx, linkID, now.Add(-24*time.Hour)); err != nil {
-		return out, err
-	}
-	out.ChartHourly = toChartHourly(hourly)
 	return out, nil
-}
-
-// toChartDaily densifies the 30-day series so the chart shows zero days too.
-func toChartDaily(days []store.DayCount) []chartPoint {
-	byDay := make(map[int64]int64, len(days))
-	for _, d := range days {
-		byDay[d.Day.Unix()] = d.Count
-	}
-	today := time.Now().UTC().Truncate(24 * time.Hour)
-	out := make([]chartPoint, 0, len(days)+1)
-	for i := 29; i >= 0; i-- {
-		day := today.AddDate(0, 0, -i)
-		out = append(out, chartPoint{Label: day.Format("01-02"), Count: byDay[day.Unix()]})
-	}
-	return out
 }
 
 // errIsNotFound hides the store sentinel from page logic.
 func errIsNotFound(err error) bool { return errors.Is(err, store.ErrNotFound) }
-
-// toChartHourly densifies the 24-hour series the same way.
-func toChartHourly(hours []store.HourCount) []chartPoint {
-	byHour := make(map[int64]int64, len(hours))
-	for _, h := range hours {
-		byHour[h.Hour.Unix()] = h.Count
-	}
-	top := time.Now().UTC().Truncate(time.Hour)
-	out := make([]chartPoint, 0, len(hours)+1)
-	for i := 23; i >= 0; i-- {
-		hour := top.Add(-time.Duration(i) * time.Hour)
-		out = append(out, chartPoint{Label: hour.Format("01-02 15h"), Count: byHour[hour.Unix()]})
-	}
-	return out
-}
 
 // handleStatsPage answers GET /stats with global analytics.
 func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
@@ -294,10 +251,11 @@ func (s *Server) handleStatsPage(w http.ResponseWriter, r *http.Request) {
 	if d["TopReferers"], err = s.st.TopReferersGlobal(ctx, now.Add(-30*24*time.Hour), 10); err != nil {
 		s.log.Error("stats: referers", "err", err)
 	}
-	if daily, err := s.st.ClicksByDayGlobal(ctx, now.Add(-30*24*time.Hour), now.Add(time.Hour)); err != nil {
+	// last-7-days table for the HTML page (the 30d series stays in the API)
+	if daily, err := s.st.ClicksByDayGlobal(ctx, now.Add(-7*24*time.Hour), now.Add(time.Hour)); err != nil {
 		s.log.Error("stats: daily", "err", err)
 	} else {
-		d["ChartDaily30"] = toChartDaily(daily)
+		d["Days7"] = daily
 	}
 	if top, err := s.st.ListLinks(ctx, 5, 0); err == nil {
 		d["TopLinks"] = s.linkJSONs(top)

@@ -11,9 +11,11 @@
 </section>
 
 <section class="panel">
-  <h2>Clicks per day (30d)</h2>
-  <canvas data-chart="daily30" width="640" height="240"></canvas>
-  <script type="application/json" data-json="daily30">{{jsonObj .ChartDaily30}}</script>
+  <h2>Clicks per day (last 7)</h2>
+  <table class="tbl"><thead><tr><th>Day</th><th class="n">Clicks</th></tr></thead><tbody>
+  {{- range .Days7}}<tr><td>{{humanDay .Day}}</td><td class="n">{{.Count}}</td></tr>
+  {{- else}}<tr><td colspan="2" class="empty">no clicks yet</td></tr>{{- end}}
+  </tbody></table>
 </section>
 
 <div class="grid2">
