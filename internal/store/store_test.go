@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -176,6 +177,47 @@ func TestRecordClickAtomic(t *testing.T) {
 	if n, _ := s.TotalClicksForLink(ctx, l.ID); n != 1 {
 		t.Errorf("rows = %d, want 1", n)
 	}
+}
+
+// TestPragmasApplied guards the DSN pragma syntax: modernc.org/sqlite takes
+// function-style values (`_pragma=busy_timeout(5000)`), and a silently
+// unapplied pragma would mean no WAL and no busy timeout in production.
+func TestPragmasApplied(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	var mode string
+	if err := s.rw.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Errorf("journal_mode = %q, want wal", mode)
+	}
+
+	if got := pragInt(t, s.rw, `PRAGMA busy_timeout`); got != 5000 {
+		t.Errorf("busy_timeout = %d, want 5000", got)
+	}
+	if got := pragInt(t, s.rw, `PRAGMA foreign_keys`); got != 1 {
+		t.Errorf("foreign_keys = %d, want 1", got)
+	}
+	// synchronous: 2 = FULL (default), 1 = NORMAL (the DSN asks for NORMAL)
+	if got := pragInt(t, s.rw, `PRAGMA synchronous`); got != 1 {
+		t.Errorf("synchronous = %d, want 1 (NORMAL)", got)
+	}
+	// the read pool must not be able to write
+	if got := pragInt(t, s.ro, `PRAGMA query_only`); got != 1 {
+		t.Errorf("ro query_only = %d, want 1", got)
+	}
+}
+
+func pragInt(t *testing.T, db *sql.DB, q string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRowContext(context.Background(), q).Scan(&n); err != nil {
+		t.Fatalf("%s: %v", q, err)
+	}
+	return n
 }
 
 func TestLinkExpired(t *testing.T) {
